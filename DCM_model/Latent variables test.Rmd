@@ -1,0 +1,22 @@
+---
+title: "Latent variables testing"
+author: "Daniel Chen"
+date: "2024-05-31"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+load("data.RData")
+```
+
+```{r}
+load("res.RData")
+```
+```{r}
+
+```
+

@@ -1,0 +1,10 @@
+name = "DCM_model"
+uuid = "a277bcd1-15e0-4f14-904e-1e6178c012b2"
+authors = ["dc165 <51100406+dc165@users.noreply.github.com>"]
+version = "0.1.0"
+
+[deps]
+Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
+FileIO = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
+ImageView = "86fae568-95e7-573e-a6b2-d8a6b900c9ef"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
