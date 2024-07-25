@@ -59,11 +59,9 @@ function get_dup!(
             u_idx = Int(j*k+i-((j+1)*j)/2 + 1)
             u_storage[u_idx] = 1
             T_storage[i + 1, j + 1] = 1
-            # T_storage[j + 1, i + 1] = 1
             BLAS.gemm!('N', 'T', T(1), view(T_storage, 1:k^2), u_storage, T(1), out)
             u_storage[u_idx] = 0
             T_storage[i + 1, j + 1] = 0
-            # T_storage[j + 1, i + 1] = 0
         end
     end
 end
