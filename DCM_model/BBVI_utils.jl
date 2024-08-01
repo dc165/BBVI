@@ -46,41 +46,36 @@ function sigmoid(z::AbstractFloat)
 end
 
 function get_dup!(
-    out         :: Matrix{T},
-    u_storage   :: Vector{T},
-    T_storage   :: Matrix{T}, 
+    out         :: AbstractMatrix{T}, 
     k           :: Int
 ) where T <: AbstractFloat
     fill!(out, 0)
-    fill!(u_storage, 0)
-    fill!(T_storage, 0)
-    for j in 0:(k - 1)
-        for i in j:(k - 1)
-            u_idx = Int(j*k+i-((j+1)*j)/2 + 1)
-            u_storage[u_idx] = 1
-            T_storage[i + 1, j + 1] = 1
-            BLAS.gemm!('N', 'T', T(1), view(T_storage, 1:k^2), u_storage, T(1), out)
-            u_storage[u_idx] = 0
-            T_storage[i + 1, j + 1] = 0
+    for j in 1:k
+        for i in j:k
+            u_idx = Int((j-1)*k+i-((j-1)*j)/2)
+            T_idx = Int((j-1)*k + i)
+            out[T_idx, u_idx] = 1
         end
     end
 end
 
+# bad implementation; can remove matrix multiplication
 function get_elim!(
-    out         :: Matrix{T},
-    u_storage   :: Vector{T},
-    T_storage   :: Matrix{T}, 
+    out         :: AbstractMatrix{T},
+    u_storage   :: AbstractVector{T},
+    T_storage   :: AbstractMatrix{T}, 
     k           :: Int
 ) where T <: AbstractFloat
     fill!(out, 0)
     fill!(u_storage, 0)
     fill!(T_storage, 0)
+    vec_T = view(T_storage, 1:k^2)
     for j in 0:(k - 1)
         for i in j:(k - 1)
             u_idx = Int(j*k+i-((j+1)*j)/2 + 1)
             u_storage[u_idx] = 1
             T_storage[i + 1, j + 1] = 1
-            BLAS.gemm!('N', 'T', T(1), u_storage, view(T_storage, 1:k^2), T(1), out)
+            BLAS.gemm!('N', 'T', T(1), u_storage, vec_T, T(1), out)
             u_storage[u_idx] = 0
             T_storage[i + 1, j + 1] = 0
         end
@@ -88,7 +83,7 @@ function get_elim!(
 end
 
 function get_comm!(
-    out         :: Matrix{T}, 
+    out         :: AbstractMatrix{T}, 
     k           :: Int
 ) where T <: AbstractFloat
     fill!(out, 0)
