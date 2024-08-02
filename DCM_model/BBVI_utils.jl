@@ -93,4 +93,41 @@ function get_comm!(
         end
     end
 end
+
+function h(
+    u   :: T,
+    pi  :: Vector{T}) where T <: AbstractFloat
+    ret = -1
+    for i in 1:length(pi)
+        if pi[i] > u
+            ret += pi[i] - u
+        end
+    end
+    ret
+end
+
+function h_prime(
+    u   :: T,
+    pi  :: Vector{T}) where T <: AbstractFloat
+    ret = 0
+    for i in 1:length(pi)
+        if pi[i] > u
+            ret -= 1
+        end
+    end
+    ret
+end
+function project_to_unit_simplex!(pi::Vector{T}) where T <: AbstractFloat
+    u = minimum(pi)
+    while h(u, pi) != 0
+        u -= h(u, pi)/h_prime(u, pi)
+    end
+    for i in 1:length(pi)
+        if pi[i] > u
+            pi[i] -= u
+        else
+            pi[i] = 0
+        end
+    end
+end
 ;
