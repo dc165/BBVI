@@ -94,6 +94,8 @@ function get_comm!(
     end
 end
 
+# The following functions are no longer used in the BBVI for DCM implementation
+
 function h(
     u   :: T,
     pi  :: Vector{T}) where T <: AbstractFloat
