@@ -44,9 +44,11 @@ struct DCModel{T <: AbstractFloat}
     storage_L       :: Vector{T}
     storage_L2      :: Vector{T}
     storage_L3      :: Vector{T}
+    storage_L4      :: Vector{T}
     storage_LL      :: Matrix{T}
     storage_LL2     :: Matrix{T}
     storage_LL3     :: Matrix{T}
+    storage_LL4     :: Matrix{T}
     # Preallocated storage for matrix vectorization operations
     storage_comm    :: Matrix{T}
     storage_dup     :: Matrix{T}
@@ -106,9 +108,11 @@ function DCModel(
     storage_L = Vector{T}(undef, L)
     storage_L2 = similar(storage_L)
     storage_L3 = similar(storage_L)
+    storage_L4 = similar(storage_L)
     storage_LL = Matrix{T}(undef, L, L)
     storage_LL2 = similar(storage_LL)
     storage_LL3 = similar(storage_LL)
+    storage_LL4 = similar(storage_LL)
     # Preallocate storage for matrix vectorization operations
     storage_comm = Matrix{T}(undef, L^2, L^2)
     storage_dup = Matrix{T}(undef, L^2, Int(L*(L+1)/2))
@@ -123,7 +127,7 @@ function DCModel(
     DCModel(obs, d0, a0, b0, 
     pi_star, mu_star, V_star, d_star, a_star, b_star, M,
     Z_sample, beta_sample, pi_sample, sigma2_sample,
-    storage_L, storage_L2, storage_L3, storage_LL, storage_LL2, storage_LL3,
+    storage_L, storage_L2, storage_L3, storage_L4, storage_LL, storage_LL2, storage_LL3, storage_LL4,
     storage_comm, storage_dup, storage_Lsqr, storage_Lsqr2, storage_L2L2, storage_C, storage_gradC,
     I_LL)
 end
@@ -318,6 +322,12 @@ function update_mu_star_V_star(
         get_dup!(dup_j, len_beta)
         # Assign len_beta by len_beta identity matrix
         I_j = view(model.I_LL, 1:len_beta, 1:len_beta)
+        # Initialize variables for tracking previous values
+        prev_ELBO = -Inf
+        prev_mu = view(model.storage_L4, 1:len_beta)
+        prev_V = view(model.storage_LL4, 1:len_beta, 1:len_beta)
+        prev_mu .= mu_star_old[j]
+        prev_V .= V_star_old[j]
         for iter in 1:maxiter
             # Sample β from variational distribution
             sample_variational_distribution(model, sample_β=true, idx_β=j)
@@ -397,11 +407,21 @@ function update_mu_star_V_star(
             if abs2(norm(vech_C_star_old_j)) > 1e6
                 break
             end
-            # Update mu and C with one step
-            mu_star_old_j .+= step .* grad_mu_L
-            vech_C_star_old_j .+= step .* vech_grad_C_L
-            # Set V_star_old_j = C * C'
-            BLAS.gemm!('N', 'T', T(1), C_star_old_j, C_star_old_j, T(1), fill!(V_star_old_j, 0))
+            # If ELBO decreases, go to previous step
+            if ELBO < prev_ELBO
+                mu_star_old_j .= prev_mu
+                V_star_old_j .= prev_V
+            else
+                # Save current values
+                prev_mu .= mu_star_old_j
+                prev_V .= V_star_old_j
+                prev_ELBO = ELBO
+                # Update mu and C with one step
+                mu_star_old_j .+= step .* grad_mu_L
+                vech_C_star_old_j .+= step .* vech_grad_C_L
+                # Set V_star_old_j = C * C'
+                BLAS.gemm!('N', 'T', T(1), C_star_old_j, C_star_old_j, T(1), fill!(V_star_old_j, 0))
+            end
         end
     end
 end
