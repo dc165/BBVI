@@ -276,12 +276,14 @@ end
 # Gradient ascent of variational distribution of β
 # TODO: Investigate why gradient explodes after convergence for small sample sizes
 function update_mu_star_V_star(
-    model::DCModel;
-    step::T,
-    tol::T=1e-6,
-    maxiter::Int=100000,
-    verbose::Bool=true
-) where {T<:AbstractFloat}
+    model       :: DCModel;
+    init_step   :: T=1e-3,
+    step_iterator=get_robbins_monroe_iterator(init_step),
+    use_iter    :: Bool=false,
+    tol         :: T=1e-6,
+    maxiter     :: Int=100000,
+    verbose     :: Bool=true
+) where T <: AbstractFloat
     obs = model.obs
     Y, D = Matrix{T}(obs.Y), Vector{Matrix{T}}(obs.D)
     Z_sample, beta_sample, sigma2_sample = model.Z_sample, model.beta_sample, model.sigma2_sample
@@ -322,12 +324,12 @@ function update_mu_star_V_star(
         get_dup!(dup_j, len_beta)
         # Assign len_beta by len_beta identity matrix
         I_j = view(model.I_LL, 1:len_beta, 1:len_beta)
-        # Initialize variables for tracking previous values
-        prev_ELBO = -Inf
-        prev_mu = view(model.storage_L4, 1:len_beta)
-        prev_V = view(model.storage_LL4, 1:len_beta, 1:len_beta)
-        prev_mu .= mu_star_old[j]
-        prev_V .= V_star_old[j]
+        # # Initialize variables for tracking previous values
+        # prev_ELBO = -Inf
+        # prev_mu = view(model.storage_L4, 1:len_beta)
+        # prev_V = view(model.storage_LL4, 1:len_beta, 1:len_beta)
+        # prev_mu .= mu_star_old[j]
+        # prev_V .= V_star_old[j]
         for iter in 1:maxiter
             # Sample β from variational distribution
             sample_variational_distribution(model, sample_β=true, idx_β=j)
@@ -407,21 +409,30 @@ function update_mu_star_V_star(
             if abs2(norm(vech_C_star_old_j)) > 1e6
                 break
             end
-            # If ELBO decreases, go to previous step
-            if ELBO < prev_ELBO
-                mu_star_old_j .= prev_mu
-                V_star_old_j .= prev_V
-            else
-                # Save current values
-                prev_mu .= mu_star_old_j
-                prev_V .= V_star_old_j
-                prev_ELBO = ELBO
-                # Update mu and C with one step
-                mu_star_old_j .+= step .* grad_mu_L
-                vech_C_star_old_j .+= step .* vech_grad_C_L
-                # Set V_star_old_j = C * C'
-                BLAS.gemm!('N', 'T', T(1), C_star_old_j, C_star_old_j, T(1), fill!(V_star_old_j, 0))
+            # # If ELBO decreases, go to previous step
+            # if ELBO < prev_ELBO
+            #     mu_star_old_j .= prev_mu
+            #     V_star_old_j .= prev_V
+            # else
+            #     # Save current values
+            #     prev_mu .= mu_star_old_j
+            #     prev_V .= V_star_old_j
+            #     prev_ELBO = ELBO
+            #     # Update mu and C with one step
+            #     mu_star_old_j .+= step .* grad_mu_L
+            #     vech_C_star_old_j .+= step .* vech_grad_C_L
+            #     # Set V_star_old_j = C * C'
+            #     BLAS.gemm!('N', 'T', T(1), C_star_old_j, C_star_old_j, T(1), fill!(V_star_old_j, 0))
+            # end
+            # Update mu and C with one step
+            step = init_step
+            if use_iter
+                step = step_iterator()
             end
+            mu_star_old_j .+= step .* grad_mu_L ./ norm(grad_mu_L)
+            vech_C_star_old_j .+= step .* vech_grad_C_L ./ norm(vech_grad_C_L)
+            # Set V_star_old_j = C * C'
+            BLAS.gemm!('N', 'T', T(1), C_star_old_j, C_star_old_j, T(1), fill!(V_star_old_j, 0))
         end
     end
 end

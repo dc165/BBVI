@@ -1,4 +1,4 @@
-using LinearAlgebra, Combinatorics
+using LinearAlgebra, Combinatorics, ResumableFunctions
 
 function generate_features(q::Vector{Int})
     num_skills = length(q)
@@ -130,6 +130,14 @@ function project_to_unit_simplex!(pi::Vector{T}) where T <: AbstractFloat
         else
             pi[i] = 0
         end
+    end
+end
+
+@resumable function get_robbins_monroe_iterator(initial_size::AbstractFloat)
+    counter = 1
+    while counter < 1e8
+        @yield initial_size / counter
+        counter += 1
     end
 end
 ;
