@@ -217,7 +217,7 @@ function update_pi_star(
     # Sample Z, β, and pi from variational distribution. Only samples of Z will be updated as the parameters update
     sample_variational_distribution(model, sample_Z = true, sample_β = true, sample_pi = true)
     # Fully update parameters of each Z_i using noisy gradients before moving to update parameters of next Z_i
-    for i in 1:N
+    @inbounds for i in 1:N
         # Storage for gradient terms
         grad_log_q = model.storage_L2
         grad_L = model.storage_L3
@@ -227,7 +227,7 @@ function update_pi_star(
         # Get parameters for variational distribution of skill of i-th student
         pi_star_old_i = pi_star_old[i]
         # Perform gradient descent update of i-th π*    
-        for iter in 1:maxiter
+        @inbounds for iter in 1:maxiter
             # Rho is unique up to a constant addative term
             rho_star_old_i = log.(pi_star_old_i)
             # Sample Z with updated π*
@@ -237,7 +237,7 @@ function update_pi_star(
             # Rao Blackwellized ELBO
             ELBO = 0
             # Calculate the gradient estimate of the m-th sample
-            for m in 1:M
+            @inbounds for m in 1:M
                 z_im = Z_sample[i][m]
                 # Calculate gradient of log(q_1i(Z_i)) w.r.t. π*_i
                 grad_log_q .= z_im .- pi_star_old_i
@@ -293,7 +293,7 @@ function update_mu_star_V_star(
     # Sample Z, β, and sigma^2. Only β samples will update as the parameters update
     sample_variational_distribution(model, sample_Z=true, sample_β=true, sample_sigma2=true)
     # Fully update parameters of each β_j using noisy gradients before moving to update parameters of next β_j
-    for j in 1:J
+    @inbounds for j in 1:J
         # Perform gradient descent update of mu_j and V_j
         len_beta = length(beta_sample[j][1])
         # Assign storage for gradient terms
@@ -330,7 +330,7 @@ function update_mu_star_V_star(
         # prev_V = view(model.storage_LL4, 1:len_beta, 1:len_beta)
         # prev_mu .= mu_star_old[j]
         # prev_V .= V_star_old[j]
-        for iter in 1:maxiter
+        @inbounds for iter in 1:maxiter
             # Sample β from variational distribution
             sample_variational_distribution(model, sample_β=true, idx_β=j)
             fill!(grad_mu_L, 0)
@@ -358,7 +358,7 @@ function update_mu_star_V_star(
             LinearAlgebra.copytri!(Vinv_star_old_j, 'L')
             ELBO = 0
             # Calculate the gradient estimate of the m-th sample
-            for m in 1:M
+            @inbounds for m in 1:M
                 beta_jm = beta_sample[j][m]
                 fill!(grad_mu_log_q, 0)
                 # grad_mu_log_q = Vinv_star * β_jm
@@ -398,17 +398,17 @@ function update_mu_star_V_star(
                 ELBO = (m - 1) / m * ELBO + 1 / m * (log_prob_Ybeta - log_q)
             end
             # Print ELBO, parameter and gradient if verbose
-            if verbose
-                println("ELBO: $ELBO")
-                println("mu*_$j: $mu_star_old_j")
-                println("gradient mu: $grad_mu_L")
-                println("C*_$j: $C_star_old_j")
-                println("gradient C: $grad_C_L")
-            end
+            # if verbose
+            #     println("ELBO: $ELBO")
+            #     println("mu*_$j: $mu_star_old_j")
+            #     println("gradient mu: $grad_mu_L")
+            #     println("C*_$j: $C_star_old_j")
+            #     println("gradient C: $grad_C_L")
+            # end
             # Stop condition TODO: update to more appropriate stop condition
-            if abs2(norm(vech_C_star_old_j)) > 1e6
-                break
-            end
+            # if abs2(norm(vech_C_star_old_j)) > 1e6
+            #     break
+            # end
             # # If ELBO decreases, go to previous step
             # if ELBO < prev_ELBO
             #     mu_star_old_j .= prev_mu
@@ -460,7 +460,7 @@ function update_d_star(
     log_pi_m = model.storage_L3
     gamma_star_old = view(model.storage_LL, 1:L)
     # Perform gradient ascent updates
-    for iter in 1:maxiter
+    @inbounds for iter in 1:maxiter
         # Reset gradients
         fill!(grad_log_q, 0)
         fill!(grad_L, 0)
@@ -469,7 +469,7 @@ function update_d_star(
         sum_d = sum(d_star_old)
         # Variable for tracking ELBO approximation
         ELBO = 0
-        for m in 1:M
+        @inbounds for m in 1:M
             # Calculate log q(pi)
             log_q = loggamma(sum_d)
             for l in 1:L
@@ -481,7 +481,7 @@ function update_d_star(
             # Calculate log(P(Y, pi))
             log_prob_Ypi = 0
             log_pi_m .= log.(pi_sample[m])
-            for i in 1:N
+            @inbounds for i in 1:N
                 log_prob_Ypi += dot(Z_sample[i][m], log_pi_m)
             end
             log_prob_Ypi += dot(model.d0, log_pi_m) - sum(log_pi_m)
@@ -520,7 +520,7 @@ function update_a_star_b_star(
     # Sample β from variational distribution. Only samples of sigma^2 will be resampled as the parameters update
     sample_variational_distribution(model, sample_β = true)
     # Perform gradient ascent
-    for iter in 1:maxiter
+    @inbounds for iter in 1:maxiter
         # Sample sigma^2 from variational distribution
         sample_variational_distribution(model, sample_sigma2 = true)
         # Variable for tracking ELBO approximation
@@ -535,13 +535,13 @@ function update_a_star_b_star(
         log_b = log(b_star)
         loggamma_a = loggamma(a_star)
         digamma_a = digamma(a_star)
-        for m in 1:M
+        @inbounds for m in 1:M
             log_q = a_star * log_b - loggamma_a - (a_star + 1) * log(sigma2_sample[m]) - b_star/sigma2_sample[m]
             # Not actually gradient wrt to a and b, but gradient wrt log(a) and log(b)
             grad_a_log_q = (log_b - digamma_a - log(sigma2_sample[m])) * a_star
             grad_b_log_q = (a_star/b_star - 1/sigma2_sample[m]) * b_star
             log_prob_Ysigma2 = -J*L/2 * log(2*π*sigma2_sample[m]) - (model.a0 + 1) * log(sigma2_sample[m]) - model.b0/sigma2_sample[m]
-            for j in 1:J
+            @inbounds for j in 1:J
                 log_prob_Ysigma2 -= 1/(2 * sigma2_sample[m]) * dot(beta_sample[j][m], beta_sample[j][m])
             end
             # Update Gradient estimators
@@ -566,6 +566,194 @@ function update_a_star_b_star(
         log_b += step * grad_b_L
         model.a_star[1] = exp(log_a)
         model.b_star[1] = exp(log_b)
+    end
+end
+
+
+# Update all independent distributions at once
+
+struct DCModel2{T <: AbstractFloat}
+    # data
+    obs             :: DCMObs
+    # Prior distribution parameters
+    d0              :: Vector{T}
+    a0              :: T
+    b0              :: T
+    # Variational distribution parameters
+    pi_star         :: Vector{Vector{T}}
+    mu_star         :: Vector{Vector{T}}
+    V_star          :: Vector{Matrix{T}}
+    d_star          :: Vector{T}
+    a_star          :: Vector{T}
+    b_star          :: Vector{T}
+    # Number of samples for noisy gradient
+    M               :: Int
+    # Preallocated storage for samples from variational distribution
+    Z_sample        :: Vector{Vector{Vector{Int}}}
+    beta_sample     :: Vector{Vector{Vector{T}}}
+    pi_sample       :: Vector{Vector{T}}
+    sigma2_sample   :: Vector{T}
+    # Preallocated storage for noisy gradient descent calculations
+    storage_L       :: Vector{T}
+    storage_L2      :: Vector{T}
+    storage_L3      :: Vector{T}
+    storage_L4      :: Vector{T}
+    storage_LL      :: Matrix{T}
+    storage_LL2     :: Matrix{T}
+    storage_LL3     :: Matrix{T}
+    storage_LL4     :: Matrix{T}
+    # Preallocated storage for matrix vectorization operations
+    storage_comm    :: Matrix{T}
+    storage_dup     :: Matrix{T}
+    storage_Lsqr    :: Vector{T}
+    storage_Lsqr2   :: Vector{T}
+    storage_L2L2    :: Matrix{T}
+    storage_C       :: Matrix{T}
+    storage_gradC   :: Vector{T}
+    # Preallocated Identity matrix
+    I_LL            :: Matrix{T}
+end
+
+function DCModel2(
+    obs             :: DCMObs,
+    d0              :: Vector{T},
+    a0              :: T,
+    b0              :: T,
+    M               :: Int) where T <: AbstractFloat
+    N, J, L = size(obs.Y, 1), size(obs.Y, 2), size(obs.D[1], 1)
+    # Initialize variational distribution parameters
+    pi_star = Vector{Vector{T}}(undef, N)
+    for i in 1:N
+        pi_star[i] = ones(L) ./ L
+    end
+    mu_star = Vector{Vector{T}}(undef, J)
+    V_star = Vector{Matrix{T}}(undef, J)
+    for j in 1:J
+        num_features = size(obs.D[j], 2)
+        mu_star[j] = zeros(num_features)
+        V_star[j] = Matrix(1.0I, num_features, num_features)
+    end
+    d_star = ones(L) ./ L
+    a_star = [3.0]
+    b_star = [3.0]
+    # Preallocate space for samples from variational distribution
+    Z_sample = Vector{Vector{Vector{Int}}}(undef, N)
+    for i in 1:N
+        Z_sample[i] = Vector{Vector{Int}}(undef, M)
+        for m in 1:M
+            Z_sample[i][m] = Vector{Int}(undef, L)
+        end
+    end
+    beta_sample = Vector{Vector{Vector{T}}}(undef, J)
+    for j in 1:J
+        beta_sample[j] = Vector{Vector{T}}(undef, M)
+        num_features = size(obs.D[j], 2)
+        for m in 1:M
+            beta_sample[j][m] = Vector{T}(undef, num_features)
+        end
+    end
+    pi_sample = Vector{Vector{T}}(undef, M)
+    for m in 1:M
+        pi_sample[m] = Vector{T}(undef, L)
+    end
+    sigma2_sample = Vector{T}(undef, M)
+    # Preallocate storage for noisy gradient descent calculations
+    storage_L = Vector{T}(undef, L)
+    storage_L2 = similar(storage_L)
+    storage_L3 = similar(storage_L)
+    storage_L4 = similar(storage_L)
+    storage_LL = Matrix{T}(undef, L, L)
+    storage_LL2 = similar(storage_LL)
+    storage_LL3 = similar(storage_LL)
+    storage_LL4 = similar(storage_LL)
+    # Preallocate storage for matrix vectorization operations
+    storage_comm = Matrix{T}(undef, L^2, L^2)
+    storage_dup = Matrix{T}(undef, L^2, Int(L*(L+1)/2))
+    storage_Lsqr = Vector{T}(undef, L^2)
+    storage_Lsqr2 = Vector{T}(undef, L^2)
+    storage_L2L2 = Matrix{T}(undef, L^2, L^2)
+    storage_C = Matrix{T}(undef, L, L)
+    storage_gradC = Vector{T}(undef, Int(L*(L+1)/2))
+    # Preallocate Identity matrix
+    I_LL = Matrix{T}(I, L, L)
+    # Initialize DCModel object
+    DCModel2(obs, d0, a0, b0, 
+    pi_star, mu_star, V_star, d_star, a_star, b_star, M,
+    Z_sample, beta_sample, pi_sample, sigma2_sample,
+    storage_L, storage_L2, storage_L3, storage_L4, storage_LL, storage_LL2, storage_LL3, storage_LL4,
+    storage_comm, storage_dup, storage_Lsqr, storage_Lsqr2, storage_L2L2, storage_C, storage_gradC,
+    I_LL)
+end
+
+function update_pi_star2(
+    model           :: DCModel;
+    step            :: T = 1e-2,
+    tol             :: T = 1e-6,
+    maxiter         :: Int = 100000,
+    verbose         :: Bool = true
+) where T <: AbstractFloat
+    obs = model.obs
+    Y, D = obs.Y, obs.D
+    Z_sample, beta_sample, pi_sample = model.Z_sample, model.beta_sample, model.pi_sample
+    pi_star_old = model.pi_star
+    N, J, L = size(Y, 1), size(Y, 2), size(D[1], 1)
+    M = model.M
+    # Sample Z, β, and pi from variational distribution. Only samples of Z will be updated as the parameters update
+    sample_variational_distribution(model, sample_Z = true, sample_β = true, sample_pi = true)
+    # Fully update parameters of each Z_i using noisy gradients before moving to update parameters of next Z_i
+    @inbounds for i in 1:N
+        # Storage for gradient terms
+        grad_log_q = model.storage_L2
+        grad_L = model.storage_L3
+        # Storage for intermediate term in gradient calculations
+        D_beta = model.storage_L
+        rho_star_old_i = view(model.storage_LL3, 1:L)
+        # Get parameters for variational distribution of skill of i-th student
+        pi_star_old_i = pi_star_old[i]
+        # Perform gradient descent update of i-th π*    
+        @inbounds for iter in 1:maxiter
+            # Rho is unique up to a constant addative term
+            rho_star_old_i = log.(pi_star_old_i)
+            # Sample Z with updated π*
+            sample_variational_distribution(model, sample_Z = true, idx_Z = i)
+            # Set gradient of ELBO to 0
+            fill!(grad_L, 0)
+            # Rao Blackwellized ELBO
+            ELBO = 0
+            # Calculate the gradient estimate of the m-th sample
+            @inbounds for m in 1:M
+                z_im = Z_sample[i][m]
+                # Calculate gradient of log(q_1i(Z_i)) w.r.t. π*_i
+                grad_log_q .= z_im .- pi_star_old_i
+                # Calculate log(p(Y, Z_(i)))
+                log_prob_YZ = 0
+                for j in 1:J
+                    mul!(D_beta, D[j], beta_sample[j][m])
+                    log_prob_YZ += dot(z_im, log.(sigmoid.((2*Y[i,j] - 1) .* D_beta)))
+                end
+                log_prob_YZ += dot(z_im, log.(pi_sample[m]))
+                # Calculate log(q_1i(Z_i))
+                log_q = dot(z_im, log.(pi_star_old_i))
+                # Update average gradient
+                grad_L .= (m - 1)/m .* grad_L + 1/m .* grad_log_q .* (log_prob_YZ - log_q)
+                # Update ELBO estimator
+                ELBO = (m-1)/m * ELBO + 1/m * (log_prob_YZ - log_q)
+            end
+            # Print ELBO, parameter and gradient if verbose
+            if verbose
+                println("ELBO: $ELBO")
+                println("π*_$i: $pi_star_old_i")
+                println("gradient: $grad_L")
+            end
+            # Update with one step
+            rho_star_old_i .+= step * grad_L
+            # Convert logits into probabilities
+            pi_star_old_i .= exp.(rho_star_old_i) ./ sum(exp.(rho_star_old_i))
+            # Stop condition
+            if abs2(norm(grad_L)) <= tol
+                break
+            end
+        end
     end
 end
 ;
