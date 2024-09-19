@@ -686,6 +686,78 @@ function DCModel2(
 end
 
 function update_pi_star2(
+    model           :: DCModel2;
+    step            :: T = 1e-2,
+    tol             :: T = 1e-6,
+    maxiter         :: Int = 100000,
+    verbose         :: Bool = true
+) where T <: AbstractFloat
+    obs = model.obs
+    Y, D = obs.Y, obs.D
+    Z_sample, beta_sample, pi_sample = model.Z_sample, model.beta_sample, model.pi_sample
+    pi_star_old = model.pi_star
+    N, J, L = size(Y, 1), size(Y, 2), size(D[1], 1)
+    M = model.M
+    # Sample Z, β, and pi from variational distribution. Only samples of Z will be updated as the parameters update
+    sample_variational_distribution(model, sample_Z = true, sample_β = true, sample_pi = true)
+    # Fully update parameters of each Z_i using noisy gradients before moving to update parameters of next Z_i
+    @inbounds for i in 1:N
+        # Storage for gradient terms
+        grad_log_q = model.storage_L2
+        grad_L = model.storage_L3
+        # Storage for intermediate term in gradient calculations
+        D_beta = model.storage_L
+        rho_star_old_i = view(model.storage_LL3, 1:L)
+        # Get parameters for variational distribution of skill of i-th student
+        pi_star_old_i = pi_star_old[i]
+        # Perform gradient descent update of i-th π*    
+        @inbounds for iter in 1:maxiter
+            # Rho is unique up to a constant addative term
+            rho_star_old_i = log.(pi_star_old_i)
+            # Sample Z with updated π*
+            sample_variational_distribution(model, sample_Z = true, idx_Z = i)
+            # Set gradient of ELBO to 0
+            fill!(grad_L, 0)
+            # Rao Blackwellized ELBO
+            ELBO = 0
+            # Calculate the gradient estimate of the m-th sample
+            @inbounds for m in 1:M
+                z_im = Z_sample[i][m]
+                # Calculate gradient of log(q_1i(Z_i)) w.r.t. π*_i
+                grad_log_q .= z_im .- pi_star_old_i
+                # Calculate log(p(Y, Z_(i)))
+                log_prob_YZ = 0
+                for j in 1:J
+                    mul!(D_beta, D[j], beta_sample[j][m])
+                    log_prob_YZ += dot(z_im, log.(sigmoid.((2*Y[i,j] - 1) .* D_beta)))
+                end
+                log_prob_YZ += dot(z_im, log.(pi_sample[m]))
+                # Calculate log(q_1i(Z_i))
+                log_q = dot(z_im, log.(pi_star_old_i))
+                # Update average gradient
+                grad_L .= (m - 1)/m .* grad_L + 1/m .* grad_log_q .* (log_prob_YZ - log_q)
+                # Update ELBO estimator
+                ELBO = (m-1)/m * ELBO + 1/m * (log_prob_YZ - log_q)
+            end
+            # Print ELBO, parameter and gradient if verbose
+            if verbose
+                println("ELBO: $ELBO")
+                println("π*_$i: $pi_star_old_i")
+                println("gradient: $grad_L")
+            end
+            # Update with one step
+            rho_star_old_i .+= step * grad_L
+            # Convert logits into probabilities
+            pi_star_old_i .= exp.(rho_star_old_i) ./ sum(exp.(rho_star_old_i))
+            # Stop condition
+            if abs2(norm(grad_L)) <= tol
+                break
+            end
+        end
+    end
+end
+
+function update_pi_star2(
     model           :: DCModel;
     step            :: T = 1e-2,
     tol             :: T = 1e-6,
