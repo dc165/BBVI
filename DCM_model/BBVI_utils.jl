@@ -133,9 +133,9 @@ function project_to_unit_simplex!(pi::Vector{T}) where T <: AbstractFloat
     end
 end
 
-@resumable function get_robbins_monroe_iterator(initial_size::AbstractFloat)
-    counter = 1
-    while counter < 1e8
+@resumable function get_robbins_monroe_iterator(initial_size::AbstractFloat, decay_const::Int)
+    counter = decay_const
+    while 1/counter > 1e8
         @yield initial_size / counter
         counter += 1
     end
