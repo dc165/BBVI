@@ -26,6 +26,7 @@ struct DCModel{T <: AbstractFloat}
     d0                  :: Vector{T}
     a0                  :: T
     b0                  :: T
+    # This option allocates extra memory based on number of threads availible in the environment
     enable_parallel     :: Bool
     # Variational distribution parameters
     pi_star             :: Vector{Vector{T}}
@@ -427,6 +428,8 @@ function update_mu_star_V_star(
     # Fully update parameters of each β_j using noisy gradients before moving to update parameters of next β_j
     if !model.enable_parallel
         @inbounds for j in 1:J
+            mu_star_old_j = mu_star_old[j]
+            V_star_old_j = V_star_old[j]
             # Perform gradient descent update of mu_j and V_j
             len_beta = length(beta_sample[j][1])
             # Assign storage for gradient terms
@@ -470,8 +473,6 @@ function update_mu_star_V_star(
                 sample_variational_distribution(model, sample_β=true, idx_β=j)
                 fill!(grad_mu_L, 0)
                 fill!(grad_C_L, 0)
-                mu_star_old_j = mu_star_old[j]
-                V_star_old_j = V_star_old[j]
                 # Copy V* into storage
                 copy!(Vinv_star_old_j, V_star_old_j)
                 # Perform cholesky decomposition on V*
