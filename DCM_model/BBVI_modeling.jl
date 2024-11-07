@@ -288,7 +288,7 @@ function update_pi_star(
     N, J, L = size(Y, 1), size(Y, 2), size(D[1], 1)
     M = model.M
     # Sample Z, β, and pi from variational distribution. Only samples of Z will be updated as the parameters update
-    sample_variational_distribution(model, sample_Z = true, sample_β = true, sample_pi = true)
+    sample_variational_distribution(model, sample_β = true, sample_pi = true)
     # Fully update parameters of each Z_i using noisy gradients before moving to update parameters of next Z_i
     if !model.enable_parallel
         @inbounds for i in 1:N
@@ -424,7 +424,7 @@ function update_mu_star_V_star(
     N, J, L = size(Y, 1), size(Y, 2), size(D[1], 1)
     M = model.M
     # Sample Z, β, and sigma^2. Only β samples will update as the parameters update
-    sample_variational_distribution(model, sample_Z=true, sample_β=true, sample_sigma2=true)
+    sample_variational_distribution(model, sample_Z=true, sample_sigma2=true)
     # Fully update parameters of each β_j using noisy gradients before moving to update parameters of next β_j
     if !model.enable_parallel
         @inbounds for j in 1:J

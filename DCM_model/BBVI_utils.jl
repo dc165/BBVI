@@ -21,9 +21,9 @@ end
 
 function generate_delta(
     Q::Matrix{Int})
-    J, A, L = size(Q, 1), size(Q, 2), 2^size(Q, 2)
+    J, K, L = size(Q, 1), size(Q, 2), 2^size(Q, 2)
     D = Matrix{Int64}[]
-    profiles = [ digits(n, base=2, pad=2) for n in 0:(L-1) ]
+    profiles = [ reverse(digits(n, base=2, pad=K)) for n in 0:(L-1) ]
     # For each question construct feature matrix
     for j in 1:J
         # number of skills measured by question j
