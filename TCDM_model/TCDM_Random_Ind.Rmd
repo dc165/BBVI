@@ -271,8 +271,13 @@ data_generate = function(N_per_group = 20, K = 2, J = 20, C = 10, indT  = 2, see
   list('Y' = as_array(Y), 'X_group' = tensor_to_array(X_group), 'X_ind' = tensor_to_array(X_ind), 'group' = group, 'profiles' = as_array(profiles), 'profiles_index' = as.numeric(profiles_index), 'beta' = lapply(beta, function(x) as_array(x)), 'Q_matrix' = Q_matrix, 'omega' = tensor_to_array(omega), 'gamma' = tensor_to_array(gamma))
 }
 
-data = data_generate(N_per_group = 100, K = 2, J = 25, C = 50, indT = 2, seed = 1, rand_N = F, rand_cor = 0)
+data = data_generate(N_per_group = 100, K = 2, J = 25, C = 50, indT = 3, seed = 1, rand_N = F, rand_cor = 0)
 ```
+
+```{r}
+data_large_questions = data_generate(N_per_group = 100, K = 2, J = 50, C = 50, indT = 2, seed = 1, rand_N = F, rand_cor = 0)
+```
+
 
 
 ```{r}
