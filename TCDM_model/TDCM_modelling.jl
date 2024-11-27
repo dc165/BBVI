@@ -190,11 +190,15 @@ function TDCModel(
                 V_omega_star[k][t] = Vector{Vector{Matrix{T}}}(undef, 2)
                 a_tau_star[k][t] = Vector{Vector{T}}(undef, 2)
                 a_tau_star[k][t] = Vector{Vector{T}}(undef, 2)
+                b_tau_star[k][t] = Vector{Vector{T}}(undef, 2)
+                b_tau_star[k][t] = Vector{Vector{T}}(undef, 2)
                 for z in 1:2
                     mu_omega_star[k][t][z] = Vector{Vector{T}}(undef, num_features_gamma)
                     V_omega_star[k][t][z] = Vector{Matrix{T}}(undef, num_features_gamma)
                     a_tau_star[k][t][z] = ones(num_features_gamma) .* 3
                     a_tau_star[k][t][z] = ones(num_features_gamma) .* 3
+                    b_tau_star[k][t][z] = ones(num_features_gamma) .* 3
+                    b_tau_star[k][t][z] = ones(num_features_gamma) .* 3
                     for m in 1:num_features_gamma
                         mu_omega_star[k][t][z][m] = zeros(num_features_omega)
                         V_omega_star[k][t][z][m] = Matrix(1.0I, num_features_omega, num_features_omega)
@@ -417,6 +421,34 @@ function sample_γ(
                                             model.V_gamma_star[idx_skill][idx_time][indicator_skill + 1][idx_group])
     # Populate preallocated arrays with samples from variational distribution
     rand!(gamma_stkz_variational_distribution, model.gamma_sample[idx_skill][idx_time][indicator_skill + 1][idx_group])
+end
+
+function sample_ω(
+    model           :: TDCModel,
+    idx_skill       :: Int,
+    idx_time        :: Int,
+    indicator_skill :: Int,
+    idx_feature     :: Int
+)
+    # Create variational distribution from model parameters for ω
+    omega_ktzm_variational_distribution = MvNormal(model.mu_omega_star[idx_skill][idx_time][indicator_skill + 1][idx_feature],
+                                            model.V_omega_star[idx_skill][idx_time][indicator_skill + 1][idx_feature])
+    # Populate preallocated arrays with samples from variational distribution
+    rand!(omega_ktzm_variational_distribution, model.omega_sample[idx_skill][idx_time][indicator_skill + 1][idx_feature])
+end
+
+function sample_τ(
+    model           :: TDCModel,
+    idx_skill       :: Int,
+    idx_time        :: Int,
+    indicator_skill :: Int,
+    idx_feature     :: Int
+)
+    # Create variational distribution from model parameters of τ
+    tau_ktzm_variational_distribution = InverseGamma(model.a_tau_star[idx_skill][idx_time][indicator_skill + 1][idx_feature],
+                                            model.b_tau_star[idx_skill][idx_time][indicator_skill + 1][idx_feature])
+    # Populate preallocated arrays with samples from variational distribution
+    rand!(tau_ktzm_variational_distribution, model.tau_sample[idx_skill][idx_time][indicator_skill + 1][idx_feature])
 end
 
 function update_categorical_variational_distribution(
