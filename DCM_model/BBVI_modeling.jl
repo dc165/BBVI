@@ -567,7 +567,7 @@ function update_mu_star_V_star(
                     println("Question $j: $step")
                 end
                 mu_star_old_j .+= step .* grad_mu_L ./ norm(grad_mu_L)
-                vech_C_star_old_j .+= step .* vech_grad_C_L ./ norm(vech_grad_C_L)
+                vech_C_star_old_j .+= step .* vech_grad_C_L #./ norm(vech_grad_C_L)
                 # Set V_star_old_j = C * C'
                 BLAS.gemm!('N', 'T', T(1), C_star_old_j, C_star_old_j, T(1), fill!(V_star_old_j, 0))
             end
@@ -685,7 +685,7 @@ function update_mu_star_V_star(
                 if use_iter
                     step = step_iterator()
                 end
-                mu_star_old_j .+= step .* grad_mu_L ./ norm(grad_mu_L)
+                mu_star_old_j .+= step .* grad_mu_L #./ norm(grad_mu_L)
                 vech_C_star_old_j .+= step .* vech_grad_C_L ./ norm(vech_grad_C_L)
                 # Set V_star_old_j = C * C'
                 BLAS.gemm!('N', 'T', T(1), C_star_old_j, C_star_old_j, T(1), fill!(V_star_old_j, 0))

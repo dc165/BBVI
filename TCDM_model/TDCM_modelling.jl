@@ -37,7 +37,7 @@ struct TDCModel{T <: AbstractFloat}
     mu_beta_prior       :: Vector{Vector{T}}
     L_beta_prior        :: Vector{Matrix{T}} # Upper triangular Cholesky factor of prior inverse covariance matrix of betas
     mu_omega_prior      :: Vector{Vector{Vector{Vector{Vector{T}}}}}
-    V_omega_prior       :: Vector{Vector{Vector{Vector{Matrix{T}}}}}
+    L_omega_prior       :: Vector{Vector{Vector{Vector{Matrix{T}}}}} # Upper triangular Cholesky factor of prior inverse covariance matrix of omegas
     a_tau_prior         :: Vector{Vector{Vector{Vector{T}}}}
     b_tau_prior         :: Vector{Vector{Vector{Vector{T}}}}
     # This option allocates extra memory based on number of threads availible in the environment
@@ -103,7 +103,7 @@ function TDCModel(
     mu_beta_prior       :: Vector{Vector{T}},
     L_beta_prior        :: Vector{Matrix{T}},
     mu_omega_prior      :: Vector{Vector{Vector{Vector{Vector{T}}}}},
-    V_omega_prior       :: Vector{Vector{Vector{Vector{Matrix{T}}}}},
+    L_omega_prior       :: Vector{Vector{Vector{Vector{Matrix{T}}}}},
     a_tau_prior         :: Vector{Vector{Vector{Vector{T}}}},
     b_tau_prior         :: Vector{Vector{Vector{Vector{T}}}},
     M                   :: Int;
@@ -181,10 +181,10 @@ function TDCModel(
                 V_omega_star[k][t][1][1] = Matrix{T}(1.0I, num_features_omega, num_features_omega)
 
                 a_tau_star[k][t] = Vector{Vector{T}}(undef, 1)
-                a_tau_star[k][t][1] = ones(1)
+                a_tau_star[k][t][1] = ones(1) .* 3
 
                 b_tau_star[k][t] = Vector{Vector{T}}(undef, 1)
-                b_tau_star[k][t][1] = ones(1)
+                b_tau_star[k][t][1] = ones(1) .* 3
             else
                 mu_omega_star[k][t] = Vector{Vector{Vector{T}}}(undef, 2)
                 V_omega_star[k][t] = Vector{Vector{Matrix{T}}}(undef, 2)
@@ -368,7 +368,7 @@ function TDCModel(
         println("TDCModel constructed for computation on $nthreads threads")
     end
     # Initialize DCModel object
-    TDCModel(obs, mu_beta_prior, L_beta_prior, mu_omega_prior, V_omega_prior, a_tau_prior, b_tau_prior, enable_parallel,
+    TDCModel(obs, mu_beta_prior, L_beta_prior, mu_omega_prior, L_omega_prior, a_tau_prior, b_tau_prior, enable_parallel,
     pi_star, mu_beta_star, V_beta_star, mu_gamma_star, V_gamma_star, mu_omega_star, V_omega_star, a_tau_star, b_tau_star, M,
     Z_sample, beta_sample, gamma_sample, omega_sample, tau_sample,
     storage_L, storage_L2, storage_L3, storage_L4, storage_LL, storage_LL2, storage_LL3, storage_LL4,
@@ -999,4 +999,743 @@ function update_normal_variational_distribution(
     end
 end
 
+function update_normal_variational_distribution2(
+    model       :: TDCModel;
+    init_step   :: T=1e-3,
+    step_iterator=get_robbins_monroe_iterator(init_step, 20),
+    # step_iterator_factory=get_robbins_monroe_iterator,
+    use_iter    :: Bool=false,
+    tol         :: T=1e-6,
+    maxiter     :: Int=100000,
+    verbose     :: Bool=true
+) where T <: AbstractFloat
+    obs = model.obs
+    Y, D = Array{T, 3}(obs.Y), Vector{Matrix{T}}(obs.D)
+    Z_sample, gamma_sample, omega_sample, tau_sample = model.Z_sample, model.gamma_sample, model.omega_sample, model.tau_sample
+    mu_star_old, V_star_old = model.mu_gamma_star, model.V_gamma_star
+    N, J, L, O = size(Y, 1), size(Y, 3), size(D[1], 1), size(obs.Y, 2)
+    M = model.M
+    # Fully update parameters of each γ using noisy gradients before moving to update parameters of next γ
+    if !model.enable_parallel
+        @inbounds for k in 1:K
+            for t in 1:O
+                for z in 0:1
+                    if t == 1 && z == 1
+                        continue
+                    end
+                    for s in 1:S
+                        mu_star_old_j = mu_star_old[k][t][z + 1][s]
+                        V_star_old_j = V_star_old[k][t][z + 1][s]
+                        # Perform gradient descent update of mu_j and V_j
+                        len_gamma = length(mu_star_old_j)
+                        # Assign storage for gradient terms
+                        # Memory assigned from preallocated storage
+                        # Memory has to be strided (equal stride between memory addresses) to work with BLAS and LAPACK 
+                        # (important for vectorized matricies to be strided if we want to use them for linear algebra)
+                        # Matricies are stored column major in Julia, so memory is assigned by column left to right
+                        grad_mu_L = view(model.storage_L, 1:len_gamma)
+                        grad_C_L = view(model.storage_LL2, 1:len_gamma, 1:len_gamma)
+                        vech_grad_C_L = view(grad_C_L, [len_gamma * (j - 1) + i for j in 1:len_gamma for i in j:len_gamma]) # Uses same memory as grad_C_L
+                        grad_mu_log_q = view(model.storage_L2, 1:len_gamma)
+                        vec_grad_V_log_q = view(model.storage_LL3, 1:len_gamma^2)
+                        grad_V_log_q = reshape(vec_grad_V_log_q, len_gamma, len_gamma) # Uses same memory as vec_grad_V_log_q
+                        # Assign storage for calculating intermediate terms for gradient
+                        Vinv_star_old_j = view(model.storage_LL, 1:len_gamma, 1:len_gamma)
+                        gamma_minus_mu = view(model.storage_L3, 1:len_gamma)
+                        C_star_old_j = view(model.storage_C, 1:len_gamma, 1:len_gamma)
+                        vech_C_star_old_j = view(C_star_old_j, [len_gamma * (j - 1) + i for j in 1:len_gamma for i in j:len_gamma]) # Uses same memory as C_star_old_j
+                        fill!(C_star_old_j, 0)
+                        storage_kron_prod = view(model.storage_L2L2, 1:len_gamma^2, 1:len_gamma^2)
+                        storage_len_gamma_sqr = view(model.storage_Lsqr, 1:len_gamma^2)
+                        storage_len_gamma_sqr2 = view(model.storage_Lsqr2, 1:len_gamma^2)
+                        storage_gradC = view(model.storage_gradC, 1:Int(len_gamma * (len_gamma + 1) / 2))
+                        # Generate commutation and duplication matrix
+                        comm_j = view(model.storage_comm, 1:len_gamma^2, 1:len_gamma^2)
+                        dup_j = view(model.storage_dup, 1:len_gamma^2, 1:Int(len_gamma * (len_gamma + 1) / 2))
+                        get_comm!(comm_j, len_gamma)
+                        get_dup!(dup_j, len_gamma)
+                        # Assign len_gamma by len_gamma identity matrix
+                        I_j = view(model.I_LL, 1:len_gamma, 1:len_gamma)
+                        # # Get step size iterator
+                        # step_iterator = step_iterator_factory(init_step)
+                        for iter in 1:maxiter
+                            # Sample β from variational distribution
+                            sample_γ(model, s, t, k, z)
+                            fill!(grad_mu_L, 0)
+                            fill!(grad_C_L, 0)
+                            # Copy V* into storage
+                            copy!(Vinv_star_old_j, V_star_old_j)
+                            # Perform cholesky decomposition on V*
+                            # After this step, the lower triangle of Vinv_star_old_j will contain the lower triangular cholesky factor of V*
+                            LAPACK.potrf!('L', Vinv_star_old_j)
+                            # Calculate log|V_j| from diagonal of cholesky decomposition
+                            logdet_V_j = 0
+                            for b in 1:len_gamma
+                                logdet_V_j += 2 * log(Vinv_star_old_j[b, b])
+                            end
+                            # Copy lower triangular cholesky factor into preallocated storage
+                            for k in 1:len_gamma
+                                for l in 1:k
+                                    C_star_old_j[k, l] = Vinv_star_old_j[k, l]
+                                end
+                            end
+                            # Perform in place matrix inverse on positive definite V* matrix to get V* inverse
+                            LAPACK.potri!('L', Vinv_star_old_j)
+                            LinearAlgebra.copytri!(Vinv_star_old_j, 'L')
+                            ELBO = 0
+                            # Calculate the gradient estimate of the m-th sample
+                            for m in 1:M
+                                gamma_ktzsm = gamma_sample[k][t][z + 1][s][m]
+                                fill!(grad_mu_log_q, 0)
+                                # grad_mu_log_q = Vinv_star * β_jm
+                                BLAS.gemv!('N', T(1), Vinv_star_old_j, gamma_ktzsm, T(1), grad_mu_log_q)
+                                # grad_mu_log_q = Vinv_star_j * β_jm - Vinv_star_j * mu_star_j
+                                BLAS.gemv!('N', T(-1), Vinv_star_old_j, mu_star_old_j, T(1), grad_mu_log_q)
+                                # grad_V_log_q = -1/2(Vinv_star_j - Vinv_star_j * (β_jm - mu_star_j) * (β_jm - mu_star_j)^T * Vinv_star_j)
+                                copy!(grad_V_log_q, Vinv_star_old_j)
+                                BLAS.gemm!('N', 'T', T(1 / 2), grad_mu_log_q, grad_mu_log_q, T(-1 / 2), grad_V_log_q)
+                                # storage_kron_prod = I ⊗ C_j
+                                collect!(storage_kron_prod, kronecker(I_j, C_star_old_j))
+                                # storage_len_gamma_sqr = (I ⊗ C_j)'vec(grad_V_log_q)
+                                BLAS.gemv!('T', T(1), storage_kron_prod, vec_grad_V_log_q, T(1), fill!(storage_len_gamma_sqr, 0))
+                                # storage_kron_prod = C_j ⊗ I
+                                collect!(storage_kron_prod, kronecker(C_star_old_j, I_j))
+                                # storage_len_gamma_sqr2 = (C_j ⊗ I)'vec(grad_V_log_q)
+                                BLAS.gemv!('T', T(1), storage_kron_prod, vec_grad_V_log_q, T(1), fill!(storage_len_gamma_sqr2, 0))
+                                # storage_len_gamma_sqr2 = ((C_j ⊗ I)' + K'(I ⊗ C_j)')vec(grad_V_log_q)
+                                BLAS.gemv!('T', T(1), comm_j, storage_len_gamma_sqr, T(1), storage_len_gamma_sqr2)
+                                # storage_gradC = D'((C_j ⊗ I)' + K'(I ⊗ C_j)')vec(grad_V_log_q)
+                                BLAS.gemv!('T', T(1), dup_j, storage_len_gamma_sqr2, T(1), fill!(storage_gradC, 0))
+                                # Calculate log(p(Y, β_(j)))
+                                log_prob_Ygamma = 0
+                                for i in 1:N
+                                    if obs.group[i] != s
+                                        continue
+                                    end
+                                    if t > 1
+                                        prev_skill_profile = obs.skill_dict[argmax(Z_sample[i][t - 1][m])]
+                                        if prev_skill_profile[k] != z
+                                            continue
+                                        end
+                                    end
+                                    skill_profile = obs.skill_dict[argmax(Z_sample[i][t][m])]
+                                    log_prob_Ygamma += log(sigmoid((2*skill_profile[k] - 1) * 
+                                        dot(gamma_sample[k][t][z + 1][s][m], obs.X[k][t][i, :])))
+                                end
+                                num_features = length(gamma_ktzsm)
+                                for feature in 1:num_features
+                                    tau = tau_sample[k][t][z + 1][feature][m]
+                                    omega = omega_sample[k][t][z + 1][feature][m]
+                                    u = obs.U[k][t][s, :]
+                                    log_prob_Ygamma += - 1/(2 * tau) * (gamma_ktzsm[feature] - dot(u, omega))^2
+                                end
+                                gamma_minus_mu .= gamma_ktzsm
+                                gamma_minus_mu .-= mu_star_old_j
+                                log_q = -len_gamma / 2 * log(2 * pi) - 1 / 2 * logdet_V_j - 1 / 2 * dot(gamma_minus_mu, grad_mu_log_q)
+                                # Update average gradient
+                                grad_mu_L .= (m - 1) / m .* grad_mu_L + 1 / m .* grad_mu_log_q .* (log_prob_Ygamma - log_q)
+                                vech_grad_C_L .= (m - 1) / m .* vech_grad_C_L + 1 / m .* storage_gradC .* (log_prob_Ygamma - log_q)
+                                # Update ELBO estimator
+                                ELBO = (m - 1) / m * ELBO + 1 / m * (log_prob_Ygamma - log_q)
+                            end
+                            # Print ELBO, parameter and gradient if verbose
+                            if verbose
+                                println("ELBO: $ELBO")
+                                # println("mu*_$j: mu_star_old_j")
+                                # println("gradient mu: $grad_mu_L")
+                                println("C*_$k$t$z$s: $C_star_old_j")
+                                println("gradient C: $grad_C_L")
+                            end
+                            # Update mu and C with one step
+                            step = init_step
+                            if use_iter
+                                step = step_iterator()
+                            end
+                            mu_star_old_j .+= step .* grad_mu_L ./ norm(grad_mu_L)
+                            vech_C_star_old_j .+= step .* vech_grad_C_L ./ norm(vech_grad_C_L)
+                            # Set V_star_old_j = C * C'
+                            BLAS.gemm!('N', 'T', T(1), C_star_old_j, C_star_old_j, T(1), fill!(V_star_old_j, 0))
+                        end
+                    end
+                end
+            end
+        end
+    else
+        @inbounds for k in 1:K
+            for t in 1:O
+                for z in 0:1
+                    if t == 1 && z == 1
+                        continue
+                    end
+                    Threads.@threads for s in 1:S
+                        # Get thread id
+                        tid = Threads.threadid()
+
+                        mu_star_old_j = mu_star_old[k][t][z + 1][s]
+                        V_star_old_j = V_star_old[k][t][z + 1][s]
+                        # Perform gradient descent update of mu_j and V_j
+                        len_gamma = length(mu_star_old_j)
+                        # Assign storage for gradient terms
+                        # Memory assigned from preallocated storage
+                        # Memory has to be strided (equal stride between memory addresses) to work with BLAS and LAPACK 
+                        # (important for vectorized matricies to be strided if we want to use them for linear algebra)
+                        # Matricies are stored column major in Julia, so memory is assigned by column left to right
+                        grad_mu_L = view(model.storage_L_par[tid], 1:len_gamma)
+                        grad_C_L = view(model.storage_LL2_par[tid], 1:len_gamma, 1:len_gamma)
+                        vech_grad_C_L = view(grad_C_L, [len_gamma * (j - 1) + i for j in 1:len_gamma for i in j:len_gamma]) # Uses same memory as grad_C_L
+                        grad_mu_log_q = view(model.storage_L2_par[tid], 1:len_gamma)
+                        vec_grad_V_log_q = view(model.storage_LL3_par[tid], 1:len_gamma^2)
+                        grad_V_log_q = reshape(vec_grad_V_log_q, len_gamma, len_gamma) # Uses same memory as vec_grad_V_log_q
+                        # Assign storage for calculating intermediate terms for gradient
+                        Vinv_star_old_j = view(model.storage_LL_par[tid], 1:len_gamma, 1:len_gamma)
+                        gamma_minus_mu = view(model.storage_L3_par[tid], 1:len_gamma)
+                        C_star_old_j = view(model.storage_C_par[tid], 1:len_gamma, 1:len_gamma)
+                        vech_C_star_old_j = view(C_star_old_j, [len_gamma * (j - 1) + i for j in 1:len_gamma for i in j:len_gamma]) # Uses same memory as C_star_old_j
+                        fill!(C_star_old_j, 0)
+                        storage_kron_prod = view(model.storage_L2L2_par[tid], 1:len_gamma^2, 1:len_gamma^2)
+                        storage_len_gamma_sqr = view(model.storage_Lsqr_par[tid], 1:len_gamma^2)
+                        storage_len_gamma_sqr2 = view(model.storage_Lsqr2_par[tid], 1:len_gamma^2)
+                        storage_gradC = view(model.storage_gradC, 1:Int(len_gamma * (len_gamma + 1) / 2))
+                        # Generate commutation and duplication matrix
+                        comm_j = view(model.storage_comm_par[tid], 1:len_gamma^2, 1:len_gamma^2)
+                        dup_j = view(model.storage_dup_par[tid], 1:len_gamma^2, 1:Int(len_gamma * (len_gamma + 1) / 2))
+                        get_comm!(comm_j, len_gamma)
+                        get_dup!(dup_j, len_gamma)
+                        # Assign len_gamma by len_gamma identity matrix
+                        I_j = view(model.I_LL, 1:len_gamma, 1:len_gamma)
+                        # # Get step size iterator
+                        # step_iterator = step_iterator_factory(init_step)
+                        for iter in 1:maxiter
+                            # Sample β from variational distribution
+                            sample_γ(model, s, t, k, z)
+                            fill!(grad_mu_L, 0)
+                            fill!(grad_C_L, 0)
+                            # Copy V* into storage
+                            copy!(Vinv_star_old_j, V_star_old_j)
+                            # Perform cholesky decomposition on V*
+                            # After this step, the lower triangle of Vinv_star_old_j will contain the lower triangular cholesky factor of V*
+                            LAPACK.potrf!('L', Vinv_star_old_j)
+                            # Calculate log|V_j| from diagonal of cholesky decomposition
+                            logdet_V_j = 0
+                            for b in 1:len_gamma
+                                logdet_V_j += 2 * log(Vinv_star_old_j[b, b])
+                            end
+                            # Copy lower triangular cholesky factor into preallocated storage
+                            for k in 1:len_gamma
+                                for l in 1:k
+                                    C_star_old_j[k, l] = Vinv_star_old_j[k, l]
+                                end
+                            end
+                            # Perform in place matrix inverse on positive definite V* matrix to get V* inverse
+                            LAPACK.potri!('L', Vinv_star_old_j)
+                            LinearAlgebra.copytri!(Vinv_star_old_j, 'L')
+                            ELBO = 0
+                            # Calculate the gradient estimate of the m-th sample
+                            for m in 1:M
+                                gamma_ktzsm = gamma_sample[k][t][z + 1][s][m]
+                                fill!(grad_mu_log_q, 0)
+                                # grad_mu_log_q = Vinv_star * β_jm
+                                BLAS.gemv!('N', T(1), Vinv_star_old_j, gamma_ktzsm, T(1), grad_mu_log_q)
+                                # grad_mu_log_q = Vinv_star_j * β_jm - Vinv_star_j * mu_star_j
+                                BLAS.gemv!('N', T(-1), Vinv_star_old_j, mu_star_old_j, T(1), grad_mu_log_q)
+                                # grad_V_log_q = -1/2(Vinv_star_j - Vinv_star_j * (β_jm - mu_star_j) * (β_jm - mu_star_j)^T * Vinv_star_j)
+                                copy!(grad_V_log_q, Vinv_star_old_j)
+                                BLAS.gemm!('N', 'T', T(1 / 2), grad_mu_log_q, grad_mu_log_q, T(-1 / 2), grad_V_log_q)
+                                # storage_kron_prod = I ⊗ C_j
+                                collect!(storage_kron_prod, kronecker(I_j, C_star_old_j))
+                                # storage_len_gamma_sqr = (I ⊗ C_j)'vec(grad_V_log_q)
+                                BLAS.gemv!('T', T(1), storage_kron_prod, vec_grad_V_log_q, T(1), fill!(storage_len_gamma_sqr, 0))
+                                # storage_kron_prod = C_j ⊗ I
+                                collect!(storage_kron_prod, kronecker(C_star_old_j, I_j))
+                                # storage_len_gamma_sqr2 = (C_j ⊗ I)'vec(grad_V_log_q)
+                                BLAS.gemv!('T', T(1), storage_kron_prod, vec_grad_V_log_q, T(1), fill!(storage_len_gamma_sqr2, 0))
+                                # storage_len_gamma_sqr2 = ((C_j ⊗ I)' + K'(I ⊗ C_j)')vec(grad_V_log_q)
+                                BLAS.gemv!('T', T(1), comm_j, storage_len_gamma_sqr, T(1), storage_len_gamma_sqr2)
+                                # storage_gradC = D'((C_j ⊗ I)' + K'(I ⊗ C_j)')vec(grad_V_log_q)
+                                BLAS.gemv!('T', T(1), dup_j, storage_len_gamma_sqr2, T(1), fill!(storage_gradC, 0))
+                                # Calculate log(p(Y, β_(j)))
+                                log_prob_Ygamma = 0
+                                for i in 1:N
+                                    if obs.group[i] != s
+                                        continue
+                                    end
+                                    if t > 1
+                                        prev_skill_profile = obs.skill_dict[argmax(Z_sample[i][t - 1][m])]
+                                        if prev_skill_profile[k] != z
+                                            continue
+                                        end
+                                    end
+                                    skill_profile = obs.skill_dict[argmax(Z_sample[i][t][m])]
+                                    log_prob_Ygamma += log(sigmoid((2*skill_profile[k] - 1) * 
+                                        dot(gamma_sample[k][t][z + 1][s][m], obs.X[k][t][i, :])))
+                                end
+                                num_features = length(gamma_ktzsm)
+                                for feature in 1:num_features
+                                    tau = tau_sample[k][t][z + 1][feature][m]
+                                    omega = omega_sample[k][t][z + 1][feature][m]
+                                    u = obs.U[k][t][s, :]
+                                    log_prob_Ygamma += - 1/(2 * tau) * (gamma_ktzsm[feature] - dot(u, omega))^2
+                                end
+                                gamma_minus_mu .= gamma_ktzsm
+                                gamma_minus_mu .-= mu_star_old_j
+                                log_q = -len_gamma / 2 * log(2 * pi) - 1 / 2 * logdet_V_j - 1 / 2 * dot(gamma_minus_mu, grad_mu_log_q)
+                                # Update average gradient
+                                grad_mu_L .= (m - 1) / m .* grad_mu_L + 1 / m .* grad_mu_log_q .* (log_prob_Ygamma - log_q)
+                                vech_grad_C_L .= (m - 1) / m .* vech_grad_C_L + 1 / m .* storage_gradC .* (log_prob_Ygamma - log_q)
+                                # Update ELBO estimator
+                                ELBO = (m - 1) / m * ELBO + 1 / m * (log_prob_Ygamma - log_q)
+                            end
+                            # Print ELBO, parameter and gradient if verbose
+                            if verbose
+                                println("ELBO: $ELBO")
+                                # println("mu*_$j: mu_star_old_j")
+                                # println("gradient mu: $grad_mu_L")
+                                println("C*_$k$t$z$s: $C_star_old_j")
+                                println("gradient C: $grad_C_L")
+                            end
+                            # Update mu and C with one step
+                            step = init_step
+                            if use_iter
+                                step = step_iterator()
+                            end
+                            mu_star_old_j .+= step .* grad_mu_L ./ norm(grad_mu_L)
+                            vech_C_star_old_j .+= step .* vech_grad_C_L ./ norm(vech_grad_C_L)
+                            # Set V_star_old_j = C * C'
+                            BLAS.gemm!('N', 'T', T(1), C_star_old_j, C_star_old_j, T(1), fill!(V_star_old_j, 0))
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+function update_normal_variational_distribution3(
+    model       :: TDCModel;
+    init_step   :: T=1e-3,
+    step_iterator=get_robbins_monroe_iterator(init_step, 20),
+    # step_iterator_factory=get_robbins_monroe_iterator,
+    use_iter    :: Bool=false,
+    tol         :: T=1e-6,
+    maxiter     :: Int=100000,
+    verbose     :: Bool=true
+) where T <: AbstractFloat
+    obs = model.obs
+    Y, D = Array{T, 3}(obs.Y), Vector{Matrix{T}}(obs.D)
+    gamma_sample, omega_sample, tau_sample = model.gamma_sample, model.omega_sample, model.tau_sample
+    mu_star_old, V_star_old = model.mu_omega_star, model.V_omega_star
+    N, J, L, O = size(Y, 1), size(Y, 3), size(D[1], 1), size(obs.Y, 2)
+    M = model.M
+    # Fully update parameters of each γ using noisy gradients before moving to update parameters of next γ
+    if !model.enable_parallel
+        @inbounds for idx in Iterators.product(1:K, 1:O, 0:1)
+            k, t, z = idx[1], idx[2], idx[3]
+            if t == 1 && z == 1
+                continue
+            end
+            num_features = size(obs.X[k][t], 2)
+            for feature in 1:num_features
+                mu_star_old_j = mu_star_old[k][t][z + 1][feature]
+                V_star_old_j = V_star_old[k][t][z + 1][feature]
+                # Perform gradient descent update of mu_j and V_j
+                len_omega = length(mu_star_old_j)
+                # Assign storage for gradient terms
+                # Memory assigned from preallocated storage
+                # Memory has to be strided (equal stride between memory addresses) to work with BLAS and LAPACK 
+                # (important for vectorized matricies to be strided if we want to use them for linear algebra)
+                # Matricies are stored column major in Julia, so memory is assigned by column left to right
+                grad_mu_L = view(model.storage_L, 1:len_omega)
+                grad_C_L = view(model.storage_LL2, 1:len_omega, 1:len_omega)
+                vech_grad_C_L = view(grad_C_L, [len_omega * (j - 1) + i for j in 1:len_omega for i in j:len_omega]) # Uses same memory as grad_C_L
+                grad_mu_log_q = view(model.storage_L2, 1:len_omega)
+                vec_grad_V_log_q = view(model.storage_LL3, 1:len_omega^2)
+                grad_V_log_q = reshape(vec_grad_V_log_q, len_omega, len_omega) # Uses same memory as vec_grad_V_log_q
+                # Assign storage for calculating intermediate terms for gradient
+                Vinv_star_old_j = view(model.storage_LL, 1:len_omega, 1:len_omega)
+                omega_minus_mu = view(model.storage_L3, 1:len_omega)
+                L_omega_minus_mu = view(model.storage_L4, 1:len_omega)
+                C_star_old_j = view(model.storage_C, 1:len_omega, 1:len_omega)
+                vech_C_star_old_j = view(C_star_old_j, [len_omega * (j - 1) + i for j in 1:len_omega for i in j:len_omega]) # Uses same memory as C_star_old_j
+                fill!(C_star_old_j, 0)
+                storage_kron_prod = view(model.storage_L2L2, 1:len_omega^2, 1:len_omega^2)
+                storage_len_omega_sqr = view(model.storage_Lsqr, 1:len_omega^2)
+                storage_len_omega_sqr2 = view(model.storage_Lsqr2, 1:len_omega^2)
+                storage_gradC = view(model.storage_gradC, 1:Int(len_omega * (len_omega + 1) / 2))
+                # Generate commutation and duplication matrix
+                comm_j = view(model.storage_comm, 1:len_omega^2, 1:len_omega^2)
+                dup_j = view(model.storage_dup, 1:len_omega^2, 1:Int(len_omega * (len_omega + 1) / 2))
+                get_comm!(comm_j, len_omega)
+                get_dup!(dup_j, len_omega)
+                # Assign len_omega by len_omega identity matrix
+                I_j = view(model.I_LL, 1:len_omega, 1:len_omega)
+                # # Get step size iterator
+                # step_iterator = step_iterator_factory(init_step)
+                for iter in 1:maxiter
+                    # Sample β from variational distribution
+                    sample_ω(model, k, t, z, feature)
+                    fill!(grad_mu_L, 0)
+                    fill!(grad_C_L, 0)
+                    # Copy V* into storage
+                    copy!(Vinv_star_old_j, V_star_old_j)
+                    # Perform cholesky decomposition on V*
+                    # After this step, the lower triangle of Vinv_star_old_j will contain the lower triangular cholesky factor of V*
+                    LAPACK.potrf!('L', Vinv_star_old_j)
+                    # Calculate log|V_j| from diagonal of cholesky decomposition
+                    logdet_V_j = 0
+                    for b in 1:len_omega
+                        logdet_V_j += 2 * log(Vinv_star_old_j[b, b])
+                    end
+                    # Copy lower triangular cholesky factor into preallocated storage
+                    for k in 1:len_omega
+                        for l in 1:k
+                            C_star_old_j[k, l] = Vinv_star_old_j[k, l]
+                        end
+                    end
+                    # Perform in place matrix inverse on positive definite V* matrix to get V* inverse
+                    LAPACK.potri!('L', Vinv_star_old_j)
+                    LinearAlgebra.copytri!(Vinv_star_old_j, 'L')
+                    ELBO = 0
+                    # Calculate the gradient estimate of the m-th sample
+                    for m in 1:M
+                        omega_ktzm = omega_sample[k][t][z + 1][feature][m]
+                        fill!(grad_mu_log_q, 0)
+                        # grad_mu_log_q = Vinv_star * β_jm
+                        BLAS.gemv!('N', T(1), Vinv_star_old_j, omega_ktzm, T(1), grad_mu_log_q)
+                        # grad_mu_log_q = Vinv_star_j * β_jm - Vinv_star_j * mu_star_j
+                        BLAS.gemv!('N', T(-1), Vinv_star_old_j, mu_star_old_j, T(1), grad_mu_log_q)
+                        # grad_V_log_q = -1/2(Vinv_star_j - Vinv_star_j * (β_jm - mu_star_j) * (β_jm - mu_star_j)^T * Vinv_star_j)
+                        copy!(grad_V_log_q, Vinv_star_old_j)
+                        BLAS.gemm!('N', 'T', T(1 / 2), grad_mu_log_q, grad_mu_log_q, T(-1 / 2), grad_V_log_q)
+                        # storage_kron_prod = I ⊗ C_j
+                        collect!(storage_kron_prod, kronecker(I_j, C_star_old_j))
+                        # storage_len_omega_sqr = (I ⊗ C_j)'vec(grad_V_log_q)
+                        BLAS.gemv!('T', T(1), storage_kron_prod, vec_grad_V_log_q, T(1), fill!(storage_len_omega_sqr, 0))
+                        # storage_kron_prod = C_j ⊗ I
+                        collect!(storage_kron_prod, kronecker(C_star_old_j, I_j))
+                        # storage_len_omega_sqr2 = (C_j ⊗ I)'vec(grad_V_log_q)
+                        BLAS.gemv!('T', T(1), storage_kron_prod, vec_grad_V_log_q, T(1), fill!(storage_len_omega_sqr2, 0))
+                        # storage_len_omega_sqr2 = ((C_j ⊗ I)' + K'(I ⊗ C_j)')vec(grad_V_log_q)
+                        BLAS.gemv!('T', T(1), comm_j, storage_len_omega_sqr, T(1), storage_len_omega_sqr2)
+                        # storage_gradC = D'((C_j ⊗ I)' + K'(I ⊗ C_j)')vec(grad_V_log_q)
+                        BLAS.gemv!('T', T(1), dup_j, storage_len_omega_sqr2, T(1), fill!(storage_gradC, 0))
+                        # Calculate log(p(Y, β_(j)))
+                        log_prob_Yomega = 0
+                        for s in 1:S
+                            tau = tau_sample[k][t][z + 1][feature][m]
+                            gamma = gamma_sample[k][t][z + 1][s][m][feature]
+                            u = obs.U[k][t][s, :]
+                            log_prob_Yomega += - 1/(2 * tau) * (gamma - dot(u, omega_ktzm))^2
+                        end
+                        omega_minus_mu .= omega_ktzm
+                        omega_minus_mu .-= model.mu_omega_prior[k][t][z + 1][feature]
+                        mul!(L_omega_minus_mu, model.L_omega_prior[k][t][z + 1][feature], omega_minus_mu)
+                        log_prob_Yomega -= 1/2 * dot(L_omega_minus_mu, L_omega_minus_mu)
+                        omega_minus_mu .= omega_ktzm
+                        omega_minus_mu .-= mu_star_old_j
+                        log_q = -len_omega / 2 * log(2 * pi) - 1 / 2 * logdet_V_j - 1 / 2 * dot(omega_minus_mu, grad_mu_log_q)
+                        # Update average gradient
+                        grad_mu_L .= (m - 1) / m .* grad_mu_L + 1 / m .* grad_mu_log_q .* (log_prob_Yomega - log_q)
+                        vech_grad_C_L .= (m - 1) / m .* vech_grad_C_L + 1 / m .* storage_gradC .* (log_prob_Yomega - log_q)
+                        # Update ELBO estimator
+                        ELBO = (m - 1) / m * ELBO + 1 / m * (log_prob_Yomega - log_q)
+                    end
+                    # Print ELBO, parameter and gradient if verbose
+                    if verbose
+                        println("ELBO: $ELBO")
+                        # println("mu*_$j: mu_star_old_j")
+                        # println("gradient mu: $grad_mu_L")
+                        println("C*_$k$t$z$feature: $C_star_old_j")
+                        println("gradient C: $grad_C_L")
+                    end
+                    # Update mu and C with one step
+                    step = init_step
+                    if use_iter
+                        step = step_iterator()
+                    end
+                    mu_star_old_j .+= step .* grad_mu_L ./ norm(grad_mu_L)
+                    vech_C_star_old_j .+= step .* vech_grad_C_L ./ norm(vech_grad_C_L)
+                    # Set V_star_old_j = C * C'
+                    BLAS.gemm!('N', 'T', T(1), C_star_old_j, C_star_old_j, T(1), fill!(V_star_old_j, 0))
+                end
+            end
+        end
+    else
+        Threads.@threads for idx in collect(Iterators.product(1:K, 1:O, 0:1))
+            k, t, z = idx[1], idx[2], idx[3]
+            if t == 1 && z == 1
+                continue
+            end
+            num_features = size(obs.X[k][t], 2)
+            for feature in 1:num_features
+                # Get thread id
+                tid = Threads.threadid()
+
+                mu_star_old_j = mu_star_old[k][t][z + 1][feature]
+                V_star_old_j = V_star_old[k][t][z + 1][feature]
+                # Perform gradient descent update of mu_j and V_j
+                len_omega = length(mu_star_old_j)
+                # Assign storage for gradient terms
+                # Memory assigned from preallocated storage
+                # Memory has to be strided (equal stride between memory addresses) to work with BLAS and LAPACK 
+                # (important for vectorized matricies to be strided if we want to use them for linear algebra)
+                # Matricies are stored column major in Julia, so memory is assigned by column left to right
+                grad_mu_L = view(model.storage_L_par[tid], 1:len_omega)
+                grad_C_L = view(model.storage_LL2_par[tid], 1:len_omega, 1:len_omega)
+                vech_grad_C_L = view(grad_C_L, [len_omega * (j - 1) + i for j in 1:len_omega for i in j:len_omega]) # Uses same memory as grad_C_L
+                grad_mu_log_q = view(model.storage_L2_par[tid], 1:len_omega)
+                vec_grad_V_log_q = view(model.storage_LL3_par[tid], 1:len_omega^2)
+                grad_V_log_q = reshape(vec_grad_V_log_q, len_omega, len_omega) # Uses same memory as vec_grad_V_log_q
+                # Assign storage for calculating intermediate terms for gradient
+                Vinv_star_old_j = view(model.storage_LL_par[tid], 1:len_omega, 1:len_omega)
+                omega_minus_mu = view(model.storage_L3_par[tid], 1:len_omega)
+                L_omega_minus_mu = view(model.storage_L4_par[tid], 1:len_omega)
+                C_star_old_j = view(model.storage_C_par[tid], 1:len_omega, 1:len_omega)
+                vech_C_star_old_j = view(C_star_old_j, [len_omega * (j - 1) + i for j in 1:len_omega for i in j:len_omega]) # Uses same memory as C_star_old_j
+                fill!(C_star_old_j, 0)
+                storage_kron_prod = view(model.storage_L2L2_par[tid], 1:len_omega^2, 1:len_omega^2)
+                storage_len_omega_sqr = view(model.storage_Lsqr_par[tid], 1:len_omega^2)
+                storage_len_omega_sqr2 = view(model.storage_Lsqr2_par[tid], 1:len_omega^2)
+                storage_gradC = view(model.storage_gradC_par[tid], 1:Int(len_omega * (len_omega + 1) / 2))
+                # Generate commutation and duplication matrix
+                comm_j = view(model.storage_comm_par[tid], 1:len_omega^2, 1:len_omega^2)
+                dup_j = view(model.storage_dup_par[tid], 1:len_omega^2, 1:Int(len_omega * (len_omega + 1) / 2))
+                get_comm!(comm_j, len_omega)
+                get_dup!(dup_j, len_omega)
+                # Assign len_omega by len_omega identity matrix
+                I_j = view(model.I_LL, 1:len_omega, 1:len_omega)
+                # # Get step size iterator
+                # step_iterator = step_iterator_factory(init_step)
+                for iter in 1:maxiter
+                    # Sample β from variational distribution
+                    sample_ω(model, k, t, z, feature)
+                    fill!(grad_mu_L, 0)
+                    fill!(grad_C_L, 0)
+                    # Copy V* into storage
+                    copy!(Vinv_star_old_j, V_star_old_j)
+                    # Perform cholesky decomposition on V*
+                    # After this step, the lower triangle of Vinv_star_old_j will contain the lower triangular cholesky factor of V*
+                    LAPACK.potrf!('L', Vinv_star_old_j)
+                    # Calculate log|V_j| from diagonal of cholesky decomposition
+                    logdet_V_j = 0
+                    for b in 1:len_omega
+                        logdet_V_j += 2 * log(Vinv_star_old_j[b, b])
+                    end
+                    # Copy lower triangular cholesky factor into preallocated storage
+                    for k in 1:len_omega
+                        for l in 1:k
+                            C_star_old_j[k, l] = Vinv_star_old_j[k, l]
+                        end
+                    end
+                    # Perform in place matrix inverse on positive definite V* matrix to get V* inverse
+                    LAPACK.potri!('L', Vinv_star_old_j)
+                    LinearAlgebra.copytri!(Vinv_star_old_j, 'L')
+                    ELBO = 0
+                    # Calculate the gradient estimate of the m-th sample
+                    for m in 1:M
+                        omega_ktzm = omega_sample[k][t][z + 1][feature][m]
+                        fill!(grad_mu_log_q, 0)
+                        # grad_mu_log_q = Vinv_star * β_jm
+                        BLAS.gemv!('N', T(1), Vinv_star_old_j, omega_ktzm, T(1), grad_mu_log_q)
+                        # grad_mu_log_q = Vinv_star_j * β_jm - Vinv_star_j * mu_star_j
+                        BLAS.gemv!('N', T(-1), Vinv_star_old_j, mu_star_old_j, T(1), grad_mu_log_q)
+                        # grad_V_log_q = -1/2(Vinv_star_j - Vinv_star_j * (β_jm - mu_star_j) * (β_jm - mu_star_j)^T * Vinv_star_j)
+                        copy!(grad_V_log_q, Vinv_star_old_j)
+                        BLAS.gemm!('N', 'T', T(1 / 2), grad_mu_log_q, grad_mu_log_q, T(-1 / 2), grad_V_log_q)
+                        # storage_kron_prod = I ⊗ C_j
+                        collect!(storage_kron_prod, kronecker(I_j, C_star_old_j))
+                        # storage_len_omega_sqr = (I ⊗ C_j)'vec(grad_V_log_q)
+                        BLAS.gemv!('T', T(1), storage_kron_prod, vec_grad_V_log_q, T(1), fill!(storage_len_omega_sqr, 0))
+                        # storage_kron_prod = C_j ⊗ I
+                        collect!(storage_kron_prod, kronecker(C_star_old_j, I_j))
+                        # storage_len_omega_sqr2 = (C_j ⊗ I)'vec(grad_V_log_q)
+                        BLAS.gemv!('T', T(1), storage_kron_prod, vec_grad_V_log_q, T(1), fill!(storage_len_omega_sqr2, 0))
+                        # storage_len_omega_sqr2 = ((C_j ⊗ I)' + K'(I ⊗ C_j)')vec(grad_V_log_q)
+                        BLAS.gemv!('T', T(1), comm_j, storage_len_omega_sqr, T(1), storage_len_omega_sqr2)
+                        # storage_gradC = D'((C_j ⊗ I)' + K'(I ⊗ C_j)')vec(grad_V_log_q)
+                        BLAS.gemv!('T', T(1), dup_j, storage_len_omega_sqr2, T(1), fill!(storage_gradC, 0))
+                        # Calculate log(p(Y, β_(j)))
+                        log_prob_Yomega = 0
+                        for s in 1:S
+                            tau = tau_sample[k][t][z + 1][feature][m]
+                            gamma = gamma_sample[k][t][z + 1][s][m][feature]
+                            u = obs.U[k][t][s, :]
+                            log_prob_Yomega += - 1/(2 * tau) * (gamma - dot(u, omega_ktzm))^2
+                        end
+                        omega_minus_mu .= omega_ktzm
+                        omega_minus_mu .-= model.mu_omega_prior[k][t][z + 1][feature]
+                        mul!(L_omega_minus_mu, model.L_omega_prior[k][t][z + 1][feature], omega_minus_mu)
+                        log_prob_Yomega -= 1/2 * dot(L_omega_minus_mu, L_omega_minus_mu)
+                        omega_minus_mu .= omega_ktzm
+                        omega_minus_mu .-= mu_star_old_j
+                        log_q = -len_omega / 2 * log(2 * pi) - 1 / 2 * logdet_V_j - 1 / 2 * dot(omega_minus_mu, grad_mu_log_q)
+                        # Update average gradient
+                        grad_mu_L .= (m - 1) / m .* grad_mu_L + 1 / m .* grad_mu_log_q .* (log_prob_Yomega - log_q)
+                        vech_grad_C_L .= (m - 1) / m .* vech_grad_C_L + 1 / m .* storage_gradC .* (log_prob_Yomega - log_q)
+                        # Update ELBO estimator
+                        ELBO = (m - 1) / m * ELBO + 1 / m * (log_prob_Yomega - log_q)
+                    end
+                    # Print ELBO, parameter and gradient if verbose
+                    if verbose
+                        println("ELBO: $ELBO")
+                        # println("mu*_$j: mu_star_old_j")
+                        # println("gradient mu: $grad_mu_L")
+                        println("C*_$k$t$z$feature: $C_star_old_j")
+                        println("gradient C: $grad_C_L")
+                    end
+                    # Update mu and C with one step
+                    step = init_step
+                    if use_iter
+                        step = step_iterator()
+                    end
+                    mu_star_old_j .+= step .* grad_mu_L ./ norm(grad_mu_L)
+                    vech_C_star_old_j .+= step .* vech_grad_C_L ./ norm(vech_grad_C_L)
+                    # Set V_star_old_j = C * C'
+                    BLAS.gemm!('N', 'T', T(1), C_star_old_j, C_star_old_j, T(1), fill!(V_star_old_j, 0))
+                end
+            end
+        end
+    end
+end
+
+function update_inverse_gamma_distribution(
+    model           :: TDCModel;
+    step            :: T,
+    tol             :: T = 1e-6,
+    maxiter         :: Int = 100000,
+    verbose         :: Bool = true,
+    enable_parallel :: Bool = false
+) where T <: AbstractFloat
+    obs = model.obs
+    S = size(obs.U[1][1], 1)
+    tau_sample, gamma_sample, omega_sample = model.tau_sample, model.gamma_sample, model.omega_sample
+    M = model.M
+    # Perform gradient ascent
+    if !enable_parallel
+        @inbounds for idx in Iterators.product(1:K, 1:O, 0:1)
+            k, t, z = idx[1], idx[2], idx[3]
+            if t == 1 && z == 1
+                continue
+            end
+            num_features = size(obs.X[k][t], 2)
+            for feature in 1:num_features
+                for iter in 1:maxiter
+                    # Sample sigma^2 from variational distribution
+                    sample_τ(model, k, t, z, feature)
+                    # Variable for tracking ELBO approximation
+                    ELBO = 0
+                    # Variables for tracking gradient
+                    grad_a_L = 0
+                    grad_b_L = 0
+                    # Terms used in gradient calculation
+                    a_star = model.a_tau_star[k][t][z + 1][feature]
+                    b_star = model.b_tau_star[k][t][z + 1][feature]
+                    log_a = log(a_star)
+                    log_b = log(b_star)
+                    loggamma_a = loggamma(a_star)
+                    digamma_a = digamma(a_star)
+                    for m in 1:M
+                        tau_ktzm = tau_sample[k][t][z + 1][feature][m]
+                        log_q = a_star * log_b - loggamma_a - (a_star + 1) * log(tau_ktzm) - b_star/tau_ktzm
+                        # Not actually gradient wrt to a and b, but gradient wrt log(a) and log(b)
+                        grad_a_log_q = (log_b - digamma_a - log(tau_ktzm)) * a_star
+                        grad_b_log_q = (a_star/b_star - 1/tau_ktzm) * b_star
+                        a_prior = model.a_tau_prior[k][t][z + 1][feature]
+                        b_prior = model.b_tau_prior[k][t][z + 1][feature]
+                        log_prob_Ytau = -(a_prior - 1) * log(tau_ktzm) - b_prior / tau_ktzm
+                        for s in 1:S
+                            gamma = gamma_sample[k][t][z + 1][s][m][feature]
+                            omega = omega_sample[k][t][z + 1][feature][m]
+                            u = obs.U[k][t][s, :]
+                            log_prob_Ytau += -1/2 * log(tau_ktzm) - 1/(2 * tau_ktzm) * (gamma - dot(u, omega))^2
+                        end
+                        # Update Gradient estimators
+                        grad_a_L = (m-1)/m * grad_a_L + 1/m * grad_a_log_q * (log_prob_Ytau - log_q)
+                        grad_b_L = (m-1)/m * grad_b_L + 1/m * grad_b_log_q * (log_prob_Ytau - log_q)
+                        # Update ELBO estimator
+                        ELBO = (m-1)/m * ELBO + 1/m * (log_prob_Ytau - log_q)
+                    end
+                    # Print ELBO, parameter and gradient if verbose
+                    if verbose
+                        println("ELBO: $ELBO")
+                        println("a*: $a_star")
+                        println("gradient log(a*): $grad_a_L")
+                        println("b*: $b_star")
+                        println("gradient log(b*): $grad_b_L")
+                    end
+                    
+                    #TODO: Stop condition
+
+                    # Update parameters
+                    log_a += step * grad_a_L
+                    log_b += step * grad_b_L
+                    a_star = exp(log_a)
+                    b_star = exp(log_b)
+                end
+            end
+        end
+    else
+        Threads.@threads for idx in collect(Iterators.product(1:K, 1:O, 0:1))
+            k, t, z = idx[1], idx[2], idx[3]
+            if t == 1 && z == 1
+                continue
+            end
+            num_features = size(obs.X[k][t], 2)
+            @inbounds for feature in 1:num_features
+                for iter in 1:maxiter
+                    # Sample sigma^2 from variational distribution
+                    sample_τ(model, k, t, z, feature)
+                    # Variable for tracking ELBO approximation
+                    ELBO = 0
+                    # Variables for tracking gradient
+                    grad_a_L = 0
+                    grad_b_L = 0
+                    # Terms used in gradient calculation
+                    a_star = model.a_tau_star[k][t][z + 1][feature]
+                    b_star = model.b_tau_star[k][t][z + 1][feature]
+                    log_a = log(a_star)
+                    log_b = log(b_star)
+                    loggamma_a = loggamma(a_star)
+                    digamma_a = digamma(a_star)
+                    for m in 1:M
+                        tau_ktzm = tau_sample[k][t][z + 1][feature][m]
+                        log_q = a_star * log_b - loggamma_a - (a_star + 1) * log(tau_ktzm) - b_star/tau_ktzm
+                        # Not actually gradient wrt to a and b, but gradient wrt log(a) and log(b)
+                        grad_a_log_q = (log_b - digamma_a - log(tau_ktzm)) * a_star
+                        grad_b_log_q = (a_star/b_star - 1/tau_ktzm) * b_star
+                        a_prior = model.a_tau_prior[k][t][z + 1][feature]
+                        b_prior = model.b_tau_prior[k][t][z + 1][feature]
+                        log_prob_Ytau = -(a_prior - 1) * log(tau_ktzm) - b_prior / tau_ktzm
+                        for s in 1:S
+                            gamma = gamma_sample[k][t][z + 1][s][m][feature]
+                            omega = omega_sample[k][t][z + 1][feature][m]
+                            u = obs.U[k][t][s, :]
+                            log_prob_Ytau += -1/2 * log(tau_ktzm) - 1/(2 * tau_ktzm) * (gamma - dot(u, omega))^2
+                        end
+                        # Update Gradient estimators
+                        grad_a_L = (m-1)/m * grad_a_L + 1/m * grad_a_log_q * (log_prob_Ytau - log_q)
+                        grad_b_L = (m-1)/m * grad_b_L + 1/m * grad_b_log_q * (log_prob_Ytau - log_q)
+                        # Update ELBO estimator
+                        ELBO = (m-1)/m * ELBO + 1/m * (log_prob_Ytau - log_q)
+                    end
+                    # Print ELBO, parameter and gradient if verbose
+                    if verbose
+                        println("ELBO: $ELBO")
+                        println("a*: $a_star")
+                        println("gradient log(a*): $grad_a_L")
+                        println("b*: $b_star")
+                        println("gradient log(b*): $grad_b_L")
+                    end
+                    
+                    #TODO: Stop condition
+
+                    # Update parameters
+                    log_a += step * grad_a_L
+                    log_b += step * grad_b_L
+                    a_star = exp(log_a)
+                    b_star = exp(log_b)
+                end
+            end
+        end
+    end
+end
 ;
