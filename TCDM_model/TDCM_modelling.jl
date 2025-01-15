@@ -834,9 +834,11 @@ function update_normal_variational_distribution(
                     log_prob_Ybeta = 0
                     for i in 1:N
                         for t in 1:O
-                            fill!(model.storage_L3, 0)
-                            BLAS.gemv!('N', (2 * Y[i, t, j] - 1), D[j], beta_jm, T(1), model.storage_L3)
-                            log_prob_Ybeta += dot(Z_sample[i][t][m], log.(sigmoid.(model.storage_L3)))
+                            # fill!(model.storage_L3, 0)
+                            # BLAS.gemv!('N', (2 * Y[i, t, j] - 1), D[j], beta_jm, T(1), model.storage_L3)
+                            # log_prob_Ybeta += dot(Z_sample[i][t][m], log.(sigmoid.(model.storage_L3)))
+
+                            log_prob_Ybeta += log(sigmoid((2 * Y[i, t, j] - 1) * dot(D[j][argmax(Z_sample[i][t][m]), :], beta_jm)))
                         end
                     end
                     beta_minus_mu .= beta_jm
@@ -968,9 +970,11 @@ function update_normal_variational_distribution(
                     log_prob_Ybeta = 0
                     for i in 1:N
                         for t in 1:O
-                            fill!(model.storage_L3_par[tid], 0)
-                            BLAS.gemv!('N', (2 * Y[i, t, j] - 1), D[j], beta_jm, T(1), model.storage_L3_par[tid])
-                            log_prob_Ybeta += dot(Z_sample[i][t][m], log.(sigmoid.(model.storage_L3_par[tid])))
+                            # fill!(model.storage_L3_par[tid], 0)
+                            # BLAS.gemv!('N', (2 * Y[i, t, j] - 1), D[j], beta_jm, T(1), model.storage_L3_par[tid])
+                            # log_prob_Ybeta += dot(Z_sample[i][t][m], log.(sigmoid.(model.storage_L3_par[tid])))
+
+                            log_prob_Ybeta += log(sigmoid((2 * Y[i, t, j] - 1) * dot(D[j][argmax(Z_sample[i][t][m]), :], beta_jm)))
                         end
                     end
                     beta_minus_mu .= beta_jm
@@ -1666,8 +1670,8 @@ function update_inverse_gamma_distribution(
                     #TODO: Stop condition
 
                     # Update parameters
-                    log_a += step * grad_a_L
-                    log_b += step * grad_b_L
+                    log_a += step * sign(grad_a_L)
+                    log_b += step * sign(grad_b_L)
                     a_star = exp(log_a)
                     b_star = exp(log_b)
                 end
@@ -1729,8 +1733,8 @@ function update_inverse_gamma_distribution(
                     #TODO: Stop condition
 
                     # Update parameters
-                    log_a += step * grad_a_L
-                    log_b += step * grad_b_L
+                    log_a += step * sign(grad_a_L)
+                    log_b += step * sign(grad_b_L)
                     a_star = exp(log_a)
                     b_star = exp(log_b)
                 end
