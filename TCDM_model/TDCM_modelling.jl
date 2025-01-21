@@ -181,10 +181,10 @@ function TDCModel(
                 V_omega_star[k][t][1][1] = Matrix{T}(1.0I, num_features_omega, num_features_omega)
 
                 a_tau_star[k][t] = Vector{Vector{T}}(undef, 1)
-                a_tau_star[k][t][1] = ones(1) .* 3
+                a_tau_star[k][t][1] = ones(1) .* 10
 
                 b_tau_star[k][t] = Vector{Vector{T}}(undef, 1)
-                b_tau_star[k][t][1] = ones(1) .* 3
+                b_tau_star[k][t][1] = ones(1) .* 1
             else
                 mu_omega_star[k][t] = Vector{Vector{Vector{T}}}(undef, 2)
                 V_omega_star[k][t] = Vector{Vector{Matrix{T}}}(undef, 2)
@@ -195,10 +195,10 @@ function TDCModel(
                 for z in 1:2
                     mu_omega_star[k][t][z] = Vector{Vector{T}}(undef, num_features_gamma)
                     V_omega_star[k][t][z] = Vector{Matrix{T}}(undef, num_features_gamma)
-                    a_tau_star[k][t][z] = ones(num_features_gamma) .* 3
-                    a_tau_star[k][t][z] = ones(num_features_gamma) .* 3
-                    b_tau_star[k][t][z] = ones(num_features_gamma) .* 3
-                    b_tau_star[k][t][z] = ones(num_features_gamma) .* 3
+                    a_tau_star[k][t][z] = ones(num_features_gamma) .* 10
+                    a_tau_star[k][t][z] = ones(num_features_gamma) .* 10
+                    b_tau_star[k][t][z] = ones(num_features_gamma) .* 1
+                    b_tau_star[k][t][z] = ones(num_features_gamma) .* 1
                     for m in 1:num_features_gamma
                         mu_omega_star[k][t][z][m] = zeros(num_features_omega)
                         V_omega_star[k][t][z][m] = Matrix(1.0I, num_features_omega, num_features_omega)
@@ -1670,10 +1670,10 @@ function update_inverse_gamma_distribution(
                     #TODO: Stop condition
 
                     # Update parameters
-                    log_a += step * sign(grad_a_L)
-                    log_b += step * sign(grad_b_L)
-                    a_star = exp(log_a)
-                    b_star = exp(log_b)
+                    log_a += step * grad_a_L
+                    log_b += step * grad_b_L
+                    model.a_tau_star[k][t][z + 1][feature] = exp(log_a)
+                    model.b_tau_star[k][t][z + 1][feature] = exp(log_b)
                 end
             end
         end
@@ -1733,10 +1733,10 @@ function update_inverse_gamma_distribution(
                     #TODO: Stop condition
 
                     # Update parameters
-                    log_a += step * sign(grad_a_L)
-                    log_b += step * sign(grad_b_L)
-                    a_star = exp(log_a)
-                    b_star = exp(log_b)
+                    log_a += step * grad_a_L
+                    log_b += step * grad_b_L
+                    model.a_tau_star[k][t][z + 1][feature] = exp(log_a)
+                    model.b_tau_star[k][t][z + 1][feature] = exp(log_b)
                 end
             end
         end
