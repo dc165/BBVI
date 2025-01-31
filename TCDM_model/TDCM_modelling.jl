@@ -181,23 +181,19 @@ function TDCModel(
                 V_omega_star[k][t][1][1] = Matrix{T}(1.0I, num_features_omega, num_features_omega)
 
                 a_tau_star[k][t] = Vector{Vector{T}}(undef, 1)
-                a_tau_star[k][t][1] = ones(1) .* 10
+                a_tau_star[k][t][1] = ones(1) .* S / 2
 
                 b_tau_star[k][t] = Vector{Vector{T}}(undef, 1)
-                b_tau_star[k][t][1] = ones(1) .* 1
+                b_tau_star[k][t][1] = ones(1)
             else
                 mu_omega_star[k][t] = Vector{Vector{Vector{T}}}(undef, 2)
                 V_omega_star[k][t] = Vector{Vector{Matrix{T}}}(undef, 2)
                 a_tau_star[k][t] = Vector{Vector{T}}(undef, 2)
-                a_tau_star[k][t] = Vector{Vector{T}}(undef, 2)
-                b_tau_star[k][t] = Vector{Vector{T}}(undef, 2)
                 b_tau_star[k][t] = Vector{Vector{T}}(undef, 2)
                 for z in 1:2
                     mu_omega_star[k][t][z] = Vector{Vector{T}}(undef, num_features_gamma)
                     V_omega_star[k][t][z] = Vector{Matrix{T}}(undef, num_features_gamma)
-                    a_tau_star[k][t][z] = ones(num_features_gamma) .* 10
-                    a_tau_star[k][t][z] = ones(num_features_gamma) .* 10
-                    b_tau_star[k][t][z] = ones(num_features_gamma) .* 1
+                    a_tau_star[k][t][z] = ones(num_features_gamma) .* S / 2
                     b_tau_star[k][t][z] = ones(num_features_gamma) .* 1
                     for m in 1:num_features_gamma
                         mu_omega_star[k][t][z][m] = zeros(num_features_omega)
@@ -1606,15 +1602,14 @@ function update_inverse_gamma_distribution(
     step            :: T,
     tol             :: T = 1e-6,
     maxiter         :: Int = 100000,
-    verbose         :: Bool = true,
-    enable_parallel :: Bool = false
+    verbose         :: Bool = true
 ) where T <: AbstractFloat
     obs = model.obs
     S = size(obs.U[1][1], 1)
     tau_sample, gamma_sample, omega_sample = model.tau_sample, model.gamma_sample, model.omega_sample
     M = model.M
     # Perform gradient ascent
-    if !enable_parallel
+    if !model.enable_parallel
         @inbounds for idx in Iterators.product(1:K, 1:O, 0:1)
             k, t, z = idx[1], idx[2], idx[3]
             if t == 1 && z == 1
@@ -1628,20 +1623,20 @@ function update_inverse_gamma_distribution(
                     # Variable for tracking ELBO approximation
                     ELBO = 0
                     # Variables for tracking gradient
-                    grad_a_L = 0
+                    # grad_a_L = 0
                     grad_b_L = 0
                     # Terms used in gradient calculation
                     a_star = model.a_tau_star[k][t][z + 1][feature]
                     b_star = model.b_tau_star[k][t][z + 1][feature]
-                    log_a = log(a_star)
+                    # log_a = log(a_star)
                     log_b = log(b_star)
                     loggamma_a = loggamma(a_star)
-                    digamma_a = digamma(a_star)
+                    # digamma_a = digamma(a_star)
                     for m in 1:M
                         tau_ktzm = tau_sample[k][t][z + 1][feature][m]
                         log_q = a_star * log_b - loggamma_a - (a_star + 1) * log(tau_ktzm) - b_star/tau_ktzm
                         # Not actually gradient wrt to a and b, but gradient wrt log(a) and log(b)
-                        grad_a_log_q = (log_b - digamma_a - log(tau_ktzm)) * a_star
+                        # grad_a_log_q = (log_b - digamma_a - log(tau_ktzm)) * a_star
                         grad_b_log_q = (a_star/b_star - 1/tau_ktzm) * b_star
                         a_prior = model.a_tau_prior[k][t][z + 1][feature]
                         b_prior = model.b_tau_prior[k][t][z + 1][feature]
@@ -1653,7 +1648,7 @@ function update_inverse_gamma_distribution(
                             log_prob_Ytau += -1/2 * log(tau_ktzm) - 1/(2 * tau_ktzm) * (gamma - dot(u, omega))^2
                         end
                         # Update Gradient estimators
-                        grad_a_L = (m-1)/m * grad_a_L + 1/m * grad_a_log_q * (log_prob_Ytau - log_q)
+                        # grad_a_L = (m-1)/m * grad_a_L + 1/m * grad_a_log_q * (log_prob_Ytau - log_q)
                         grad_b_L = (m-1)/m * grad_b_L + 1/m * grad_b_log_q * (log_prob_Ytau - log_q)
                         # Update ELBO estimator
                         ELBO = (m-1)/m * ELBO + 1/m * (log_prob_Ytau - log_q)
@@ -1661,8 +1656,8 @@ function update_inverse_gamma_distribution(
                     # Print ELBO, parameter and gradient if verbose
                     if verbose
                         println("ELBO: $ELBO")
-                        println("a*: $a_star")
-                        println("gradient log(a*): $grad_a_L")
+                        # println("a*: $a_star")
+                        # println("gradient log(a*): $grad_a_L")
                         println("b*: $b_star")
                         println("gradient log(b*): $grad_b_L")
                     end
@@ -1670,9 +1665,9 @@ function update_inverse_gamma_distribution(
                     #TODO: Stop condition
 
                     # Update parameters
-                    log_a += step * grad_a_L
+                    # log_a += step * grad_a_L
                     log_b += step * grad_b_L
-                    model.a_tau_star[k][t][z + 1][feature] = exp(log_a)
+                    # model.a_tau_star[k][t][z + 1][feature] = exp(log_a)
                     model.b_tau_star[k][t][z + 1][feature] = exp(log_b)
                 end
             end
@@ -1691,7 +1686,7 @@ function update_inverse_gamma_distribution(
                     # Variable for tracking ELBO approximation
                     ELBO = 0
                     # Variables for tracking gradient
-                    grad_a_L = 0
+                    # grad_a_L = 0
                     grad_b_L = 0
                     # Terms used in gradient calculation
                     a_star = model.a_tau_star[k][t][z + 1][feature]
@@ -1699,24 +1694,24 @@ function update_inverse_gamma_distribution(
                     log_a = log(a_star)
                     log_b = log(b_star)
                     loggamma_a = loggamma(a_star)
-                    digamma_a = digamma(a_star)
+                    # digamma_a = digamma(a_star)
                     for m in 1:M
                         tau_ktzm = tau_sample[k][t][z + 1][feature][m]
                         log_q = a_star * log_b - loggamma_a - (a_star + 1) * log(tau_ktzm) - b_star/tau_ktzm
                         # Not actually gradient wrt to a and b, but gradient wrt log(a) and log(b)
-                        grad_a_log_q = (log_b - digamma_a - log(tau_ktzm)) * a_star
+                        # grad_a_log_q = (log_b - digamma_a - log(tau_ktzm)) * a_star
                         grad_b_log_q = (a_star/b_star - 1/tau_ktzm) * b_star
                         a_prior = model.a_tau_prior[k][t][z + 1][feature]
                         b_prior = model.b_tau_prior[k][t][z + 1][feature]
-                        log_prob_Ytau = -(a_prior - 1) * log(tau_ktzm) - b_prior / tau_ktzm
+                        log_prob_Ytau = -(a_prior + 1) * log(tau_ktzm) - b_prior / tau_ktzm
+                        omega = omega_sample[k][t][z + 1][feature][m]
                         for s in 1:S
                             gamma = gamma_sample[k][t][z + 1][s][m][feature]
-                            omega = omega_sample[k][t][z + 1][feature][m]
                             u = obs.U[k][t][s, :]
                             log_prob_Ytau += -1/2 * log(tau_ktzm) - 1/(2 * tau_ktzm) * (gamma - dot(u, omega))^2
                         end
                         # Update Gradient estimators
-                        grad_a_L = (m-1)/m * grad_a_L + 1/m * grad_a_log_q * (log_prob_Ytau - log_q)
+                        # grad_a_L = (m-1)/m * grad_a_L + 1/m * grad_a_log_q * (log_prob_Ytau - log_q)
                         grad_b_L = (m-1)/m * grad_b_L + 1/m * grad_b_log_q * (log_prob_Ytau - log_q)
                         # Update ELBO estimator
                         ELBO = (m-1)/m * ELBO + 1/m * (log_prob_Ytau - log_q)
@@ -1724,8 +1719,8 @@ function update_inverse_gamma_distribution(
                     # Print ELBO, parameter and gradient if verbose
                     if verbose
                         println("ELBO: $ELBO")
-                        println("a*: $a_star")
-                        println("gradient log(a*): $grad_a_L")
+                        # println("a*: $a_star")
+                        # println("gradient log(a*): $grad_a_L")
                         println("b*: $b_star")
                         println("gradient log(b*): $grad_b_L")
                     end
@@ -1733,12 +1728,32 @@ function update_inverse_gamma_distribution(
                     #TODO: Stop condition
 
                     # Update parameters
-                    log_a += step * grad_a_L
+                    # log_a += step * grad_a_L
                     log_b += step * grad_b_L
-                    model.a_tau_star[k][t][z + 1][feature] = exp(log_a)
+                    # model.a_tau_star[k][t][z + 1][feature] = exp(log_a)
                     model.b_tau_star[k][t][z + 1][feature] = exp(log_b)
                 end
             end
+        end
+    end
+end
+
+function update_inverse_gamma_distribution_va(
+    model           :: TDCModel;
+)
+    Threads.@threads for idx in collect(Iterators.product(1:K, 1:O, 0:1))
+        k, t, z = idx[1], idx[2], idx[3]
+        if t == 1 && z == 1
+            continue
+        end
+        num_features = size(obs.X[k][t], 2)
+        for feature in 1:num_features
+            a_star = model.a_tau_star[k][t][z + 1][feature]
+            est = 0
+            for s in 1:50
+                est += (model.mu_gamma_star[k][t][z + 1][s][feature] - dot(model.obs.U[k][t][s, :], model.mu_omega_star[k][t][z + 1][feature]))^2
+            end
+            model.b_tau_star[k][t][z + 1][feature] = (model.b_tau_prior[k][t][z + 1][feature] * (a_star - 1) + (a_star - 1)/2 * est) / (model.a_tau_prior[k][t][z + 1][feature] + 1 + S/2)
         end
     end
 end
