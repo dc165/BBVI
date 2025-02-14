@@ -1747,13 +1747,29 @@ function update_inverse_gamma_distribution_va(
             continue
         end
         num_features = size(obs.X[k][t], 2)
+        tr_features = Vector{AbstractFloat}(undef, num_features)
+        num_features_omega = size(obs.U[k][t], 2)
+        V_omega_star = zeros(num_features_omega, num_features_omega)
         for feature in 1:num_features
-            a_star = model.a_tau_star[k][t][z + 1][feature]
+            sigma_omega_star = model.V_omega_star[k][t][z + 1][feature]
+            tr_features[feature] = tr(sigma_omega_star)
+            V_omega_star .+= sigma_omega_star
+        end
+        
+        for feature in 1:num_features
             est = 0
+            # a_star = model.a_tau_star[k][t][z + 1][feature]
             for s in 1:50
-                est += (model.mu_gamma_star[k][t][z + 1][s][feature] - dot(model.obs.U[k][t][s, :], model.mu_omega_star[k][t][z + 1][feature]))^2
+                est += model.V_gamma_star[k][t][z + 1][s][feature, feature] + 
+                        (model.mu_gamma_star[k][t][z + 1][s][feature])^2 +
+                        dot(model.mu_omega_star[k][t][z + 1][feature], obs.U[k][t][s, :])^2 + 
+                        tr_features[feature] / sum(tr_features) * 
+                            tr(obs.U[k][t][s, :] * transpose(obs.U[k][t][s, :]) * V_omega_star)
+
+                # est += (model.mu_gamma_star[k][t][z + 1][s][feature] - dot(model.obs.U[k][t][s, :], model.mu_omega_star[k][t][z + 1][feature]))^2
             end
-            model.b_tau_star[k][t][z + 1][feature] = (model.b_tau_prior[k][t][z + 1][feature] * (a_star - 1) + (a_star - 1)/2 * est) / (model.a_tau_prior[k][t][z + 1][feature] + 1 + S/2)
+            # model.b_tau_star[k][t][z + 1][feature] = (model.b_tau_prior[k][t][z + 1][feature] * (a_star - 1) + (a_star - 1) / 2 * est) / (model.a_tau_prior[k][t][z + 1][feature] + 1 + S / 2)
+            model.b_tau_star[k][t][z + 1][feature] = 1/2 * est
         end
     end
 end
