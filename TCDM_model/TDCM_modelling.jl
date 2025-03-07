@@ -343,7 +343,7 @@ function TDCModel(
         storage_Lsqr2_par[1] = storage_Lsqr2
         storage_L2L2_par[1] = storage_L2L2
         storage_C_par[1] = storage_C
-        storage_gradC_par[1] = storage_gradC_par
+        storage_gradC_par[1] = storage_gradC
         for thread in 2:nthreads
             storage_L_par[thread] = Vector{T}(undef, L)
             storage_L2_par[thread] = similar(storage_L)
@@ -1013,7 +1013,7 @@ function update_normal_variational_distribution2(
     Y, D = Array{T, 3}(obs.Y), Vector{Matrix{T}}(obs.D)
     Z_sample, gamma_sample, omega_sample, tau_sample = model.Z_sample, model.gamma_sample, model.omega_sample, model.tau_sample
     mu_star_old, V_star_old = model.mu_gamma_star, model.V_gamma_star
-    N, J, L, O = size(Y, 1), size(Y, 3), size(D[1], 1), size(obs.Y, 2)
+    N, J, L, O, K = size(Y, 1), size(Y, 3), size(D[1], 1), size(obs.Y, 2), size(obs.Q, 2)
     M = model.M
     # Fully update parameters of each γ using noisy gradients before moving to update parameters of next γ
     if !model.enable_parallel
@@ -1324,7 +1324,7 @@ function update_normal_variational_distribution3(
     Y, D = Array{T, 3}(obs.Y), Vector{Matrix{T}}(obs.D)
     gamma_sample, omega_sample, tau_sample = model.gamma_sample, model.omega_sample, model.tau_sample
     mu_star_old, V_star_old = model.mu_omega_star, model.V_omega_star
-    N, J, L, O = size(Y, 1), size(Y, 3), size(D[1], 1), size(obs.Y, 2)
+    N, J, L, O, K = size(Y, 1), size(Y, 3), size(D[1], 1), size(obs.Y, 2), size(obs.Q, 2)
     M = model.M
     # Fully update parameters of each γ using noisy gradients before moving to update parameters of next γ
     if !model.enable_parallel
@@ -1605,7 +1605,7 @@ function update_inverse_gamma_distribution(
     verbose         :: Bool = true
 ) where T <: AbstractFloat
     obs = model.obs
-    S = size(obs.U[1][1], 1)
+    O, K, S = size(obs.Y, 2), size(obs.Q, 2), size(obs.U[1][1], 1)
     tau_sample, gamma_sample, omega_sample = model.tau_sample, model.gamma_sample, model.omega_sample
     M = model.M
     # Perform gradient ascent
@@ -1772,5 +1772,14 @@ function update_inverse_gamma_distribution_va(
             model.b_tau_star[k][t][z + 1][feature] = 1/2 * est
         end
     end
+end
+
+function update_inverse_wishart_distribution(
+    model       :: TDCModel,
+    step        :: T,
+    maxiter     :: Int
+) where T <: AbstractFloat
+
+    
 end
 ;
