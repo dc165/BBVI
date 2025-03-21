@@ -863,8 +863,8 @@ function update_normal_variational_distribution(
                 if use_iter
                     step = step_iterator()
                 end
-                mu_star_old_j .+= step .* grad_mu_L ./ norm(grad_mu_L)
-                vech_C_star_old_j .+= step .* vech_grad_C_L ./ norm(vech_grad_C_L)
+                mu_star_old_j .+= sqrt(len_beta) .* step .* grad_mu_L ./ norm(grad_mu_L)
+                vech_C_star_old_j .+= len_beta .* step .* vech_grad_C_L ./ norm(vech_grad_C_L)
                 # Set V_star_old_j = C * C'
                 BLAS.gemm!('N', 'T', T(1), C_star_old_j, C_star_old_j, T(1), fill!(V_star_old_j, 0))
             end
@@ -990,8 +990,8 @@ function update_normal_variational_distribution(
                 if use_iter
                     step = step_iterator()
                 end
-                mu_star_old_j .+= step .* grad_mu_L ./ norm(grad_mu_L)
-                vech_C_star_old_j .+= step .* vech_grad_C_L ./ norm(vech_grad_C_L)
+                mu_star_old_j .+= sqrt(len_beta) .* step .* grad_mu_L ./ norm(grad_mu_L)
+                vech_C_star_old_j .+= len_beta .* step .* vech_grad_C_L ./ norm(vech_grad_C_L)
                 # Set V_star_old_j = C * C'
                 BLAS.gemm!('N', 'T', T(1), C_star_old_j, C_star_old_j, T(1), fill!(V_star_old_j, 0))
             end
@@ -1151,8 +1151,8 @@ function update_normal_variational_distribution2(
                             if use_iter
                                 step = step_iterator()
                             end
-                            mu_star_old_j .+= step .* grad_mu_L ./ norm(grad_mu_L)
-                            vech_C_star_old_j .+= step .* vech_grad_C_L ./ norm(vech_grad_C_L)
+                            mu_star_old_j .+= sqrt(len_gamma) .* step .* grad_mu_L ./ norm(grad_mu_L)
+                            vech_C_star_old_j .+= len_gamma .* step .* vech_grad_C_L ./ norm(vech_grad_C_L)
                             # Set V_star_old_j = C * C'
                             BLAS.gemm!('N', 'T', T(1), C_star_old_j, C_star_old_j, T(1), fill!(V_star_old_j, 0))
                         end
@@ -1298,8 +1298,8 @@ function update_normal_variational_distribution2(
                             if use_iter
                                 step = step_iterator()
                             end
-                            mu_star_old_j .+= step .* grad_mu_L ./ norm(grad_mu_L)
-                            vech_C_star_old_j .+= step .* vech_grad_C_L ./ norm(vech_grad_C_L)
+                            mu_star_old_j .+= sqrt(len_gamma) .* step .* grad_mu_L ./ norm(grad_mu_L)
+                            vech_C_star_old_j .+= len_gamma .* step .* vech_grad_C_L ./ norm(vech_grad_C_L)
                             # Set V_star_old_j = C * C'
                             BLAS.gemm!('N', 'T', T(1), C_star_old_j, C_star_old_j, T(1), fill!(V_star_old_j, 0))
                         end
@@ -1452,8 +1452,8 @@ function update_normal_variational_distribution3(
                     if use_iter
                         step = step_iterator()
                     end
-                    mu_star_old_j .+= step .* grad_mu_L ./ norm(grad_mu_L)
-                    vech_C_star_old_j .+= step .* vech_grad_C_L ./ norm(vech_grad_C_L)
+                    mu_star_old_j .+= sqrt(len_omega) .* step .* grad_mu_L ./ norm(grad_mu_L)
+                    vech_C_star_old_j .+= len_omega .* step .* vech_grad_C_L ./ norm(vech_grad_C_L)
                     # Set V_star_old_j = C * C'
                     BLAS.gemm!('N', 'T', T(1), C_star_old_j, C_star_old_j, T(1), fill!(V_star_old_j, 0))
                 end
@@ -1587,8 +1587,8 @@ function update_normal_variational_distribution3(
                     if use_iter
                         step = step_iterator()
                     end
-                    mu_star_old_j .+= step .* grad_mu_L ./ norm(grad_mu_L)
-                    vech_C_star_old_j .+= step .* vech_grad_C_L ./ norm(vech_grad_C_L)
+                    mu_star_old_j .+= sqrt(len_omega) .* step .* grad_mu_L ./ norm(grad_mu_L)
+                    vech_C_star_old_j .+= len_omega .* step .* vech_grad_C_L ./ norm(vech_grad_C_L)
                     # Set V_star_old_j = C * C'
                     BLAS.gemm!('N', 'T', T(1), C_star_old_j, C_star_old_j, T(1), fill!(V_star_old_j, 0))
                 end
