@@ -734,6 +734,11 @@ function update_normal_variational_distribution(
     maxiter     :: Int=100000,
     verbose     :: Bool=true
 ) where T <: AbstractFloat
+
+    ELBO_tracker = Vector{T}(undef, maxiter)
+    eigen_tracker = Matrix{T}(undef, maxiter, length(model.beta_sample[1][1]))
+    mu_tracker = Matrix{T}(undef, maxiter, length(model.beta_sample[1][1]))
+
     obs = model.obs
     Y, D = Array{T, 3}(obs.Y), Vector{Matrix{T}}(obs.D)
     Z_sample, beta_sample = model.Z_sample, model.beta_sample
@@ -990,6 +995,13 @@ function update_normal_variational_distribution(
                 if use_iter
                     step = step_iterator()
                 end
+
+                if j == 1
+                    ELBO_tracker[iter] = ELBO
+                    eigen_tracker[iter, 1:len_beta] .= eigen(V_star_old_j).values
+                    mu_tracker[iter, 1:len_beta] .= mu_star_old_j
+                end
+
                 mu_star_old_j .+= sqrt(len_beta) .* step .* grad_mu_L ./ norm(grad_mu_L)
                 vech_C_star_old_j .+= len_beta .* step .* vech_grad_C_L ./ norm(vech_grad_C_L)
                 # Set V_star_old_j = C * C'
@@ -997,6 +1009,7 @@ function update_normal_variational_distribution(
             end
         end
     end
+    return mu_tracker, eigen_tracker, ELBO_tracker
 end
 
 function update_normal_variational_distribution2(
@@ -1009,6 +1022,11 @@ function update_normal_variational_distribution2(
     maxiter     :: Int=100000,
     verbose     :: Bool=true
 ) where T <: AbstractFloat
+
+    mu_tracker = Vector{Float64}(undef, maxiter)
+    var_tracker = Vector{Float64}(undef, maxiter)
+    ELBO_tracker = Vector{Float64}(undef, maxiter)
+
     obs = model.obs
     Y, D = Array{T, 3}(obs.Y), Vector{Matrix{T}}(obs.D)
     Z_sample, gamma_sample, omega_sample, tau_sample = model.Z_sample, model.gamma_sample, model.omega_sample, model.tau_sample
@@ -1146,6 +1164,11 @@ function update_normal_variational_distribution2(
                                 println("C*_$k$t$z$s: $C_star_old_j")
                                 println("gradient C: $grad_C_L")
                             end
+
+                            if((k == 1) & (t == 1) & (z == 0) & (s == 1))
+                                println("$ELBO")
+                            end
+
                             # Update mu and C with one step
                             step = init_step
                             if use_iter
@@ -1293,13 +1316,20 @@ function update_normal_variational_distribution2(
                                 println("C*_$k$t$z$s: $C_star_old_j")
                                 println("gradient C: $grad_C_L")
                             end
+
+                            if((k == 1) & (t == 1) & (z == 0) & (s == 1))
+                                mu_tracker[iter] = mu_star_old_j[1]
+                                var_tracker[iter] = vech_C_star_old_j[1]
+                                ELBO_tracker[iter] = ELBO
+                            end
+
                             # Update mu and C with one step
                             step = init_step
                             if use_iter
                                 step = step_iterator()
                             end
                             mu_star_old_j .+= sqrt(len_gamma) .* step .* grad_mu_L ./ norm(grad_mu_L)
-                            vech_C_star_old_j .+= len_gamma .* step .* vech_grad_C_L ./ norm(vech_grad_C_L)
+                            vech_C_star_old_j .-= len_gamma .* step .* vech_grad_C_L ./ norm(vech_grad_C_L)
                             # Set V_star_old_j = C * C'
                             BLAS.gemm!('N', 'T', T(1), C_star_old_j, C_star_old_j, T(1), fill!(V_star_old_j, 0))
                         end
@@ -1308,6 +1338,7 @@ function update_normal_variational_distribution2(
             end
         end
     end
+    return mu_tracker, var_tracker, ELBO_tracker
 end
 
 function update_normal_variational_distribution3(
