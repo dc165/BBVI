@@ -736,8 +736,10 @@ function update_normal_variational_distribution(
 ) where T <: AbstractFloat
 
     ELBO_tracker = Vector{T}(undef, maxiter)
-    eigen_tracker = Matrix{T}(undef, maxiter, length(model.beta_sample[1][1]))
-    mu_tracker = Matrix{T}(undef, maxiter, length(model.beta_sample[1][1]))
+    log_prob_tracker = Vector{T}(undef, maxiter)
+    log_q_tracker = Vector{T}(undef, maxiter)
+    prob_comp1_tracker = Vector{T}(undef, maxiter)
+    prob_comp2_tracker = Vector{T}(undef, maxiter)
 
     obs = model.obs
     Y, D = Array{T, 3}(obs.Y), Vector{Matrix{T}}(obs.D)
@@ -808,6 +810,7 @@ function update_normal_variational_distribution(
                 LAPACK.potri!('L', Vinv_star_old_j)
                 LinearAlgebra.copytri!(Vinv_star_old_j, 'L')
                 ELBO = 0
+
                 # Calculate the gradient estimate of the m-th sample
                 for m in 1:M
                     beta_jm = beta_sample[j][m]
@@ -854,6 +857,8 @@ function update_normal_variational_distribution(
                     vech_grad_C_L .= (m - 1) / m .* vech_grad_C_L + 1 / m .* storage_gradC .* (log_prob_Ybeta - log_q)
                     # Update ELBO estimator
                     ELBO = (m - 1) / m * ELBO + 1 / m * (log_prob_Ybeta - log_q)
+                    log_prob = (m - 1) / m * log_prob + 1 / m * (log_prob_Ybeta)
+                    log_q_avg = (m - 1) / m * log_q_avg + 1 / m * (log_q)
                 end
                 # Print ELBO, parameter and gradient if verbose
                 # if verbose
@@ -944,6 +949,11 @@ function update_normal_variational_distribution(
                 LAPACK.potri!('L', Vinv_star_old_j)
                 LinearAlgebra.copytri!(Vinv_star_old_j, 'L')
                 ELBO = 0
+                log_prob = 0
+                log_q_avg = 0
+                prob_comp1 = 0
+                prob_comp2 = 0
+
                 # Calculate the gradient estimate of the m-th sample
                 for m in 1:M
                     beta_jm = beta_sample[j][m]
@@ -978,10 +988,16 @@ function update_normal_variational_distribution(
                             log_prob_Ybeta += log(sigmoid((2 * Y[i, t, j] - 1) * dot(D[j][argmax(Z_sample[i][t][m]), :], beta_jm)))
                         end
                     end
+
+                    prob_comp1_samp = log_prob_Ybeta
+
                     beta_minus_mu .= beta_jm
                     beta_minus_mu .-= model.mu_beta_prior[j]
                     mul!(L_beta_minus_mu, model.L_beta_prior[j], beta_minus_mu)
                     log_prob_Ybeta -= 1/2 * dot(L_beta_minus_mu, L_beta_minus_mu)
+
+                    prob_comp2_samp = log_prob_Ybeta - prob_comp1
+
                     beta_minus_mu .= beta_jm
                     beta_minus_mu .-= mu_star_old_j
                     log_q = -len_beta / 2 * log(2 * pi) - 1 / 2 * logdet_V_j - 1 / 2 * dot(beta_minus_mu, grad_mu_log_q)
@@ -990,31 +1006,38 @@ function update_normal_variational_distribution(
                     vech_grad_C_L .= (m - 1) / m .* vech_grad_C_L + 1 / m .* storage_gradC .* (log_prob_Ybeta - log_q)
                     # Update ELBO estimator
                     ELBO = (m - 1) / m * ELBO + 1 / m * (log_prob_Ybeta - log_q)
+                    log_prob = (m - 1) / m * log_prob + 1 / m * (log_prob_Ybeta)
+                    log_q_avg = (m - 1) / m * log_q_avg + 1 / m * (log_q)
+                    prob_comp1 = (m - 1) / m * prob_comp1 + 1 / m * prob_comp1_samp
+                    prob_comp2 = (m - 1) / m * prob_comp2 + 1 / m * prob_comp2_samp
                 end
                 step = init_step
                 if use_iter
                     step = step_iterator()
                 end
 
-                if j == 1
-                    ELBO_tracker[iter] = ELBO
-                    eigen_tracker[iter, 1:len_beta] .= eigen(V_star_old_j).values
-                    mu_tracker[iter, 1:len_beta] .= mu_star_old_j
-                end
-
                 mu_star_old_j .+= sqrt(len_beta) .* step .* grad_mu_L ./ norm(grad_mu_L)
                 vech_C_star_old_j .+= len_beta .* step .* vech_grad_C_L ./ norm(vech_grad_C_L)
                 # Set V_star_old_j = C * C'
                 BLAS.gemm!('N', 'T', T(1), C_star_old_j, C_star_old_j, T(1), fill!(V_star_old_j, 0))
+
+                if j==1
+                    ELBO_tracker[iter] = ELBO
+                    log_prob_tracker[iter] = log_prob
+                    log_q_tracker[iter] = log_q_avg
+                    prob_comp1_tracker[iter] = prob_comp1
+                    prob_comp2_tracker[iter] = prob_comp2
+                end
             end
         end
     end
-    return mu_tracker, eigen_tracker, ELBO_tracker
+    return ELBO_tracker, log_prob_tracker, log_q_tracker, prob_comp1_tracker, prob_comp2_tracker
 end
 
 function update_normal_variational_distribution2(
     model       :: TDCModel;
     init_step   :: T=1e-3,
+    cov_step    :: T=1e-3,
     step_iterator=get_robbins_monroe_iterator(init_step, 20),
     # step_iterator_factory=get_robbins_monroe_iterator,
     use_iter    :: Bool=false,
@@ -1023,16 +1046,13 @@ function update_normal_variational_distribution2(
     verbose     :: Bool=true
 ) where T <: AbstractFloat
 
-    mu_tracker = Vector{Float64}(undef, maxiter)
-    var_tracker = Vector{Float64}(undef, maxiter)
-    ELBO_tracker = Vector{Float64}(undef, maxiter)
-
     obs = model.obs
     Y, D = Array{T, 3}(obs.Y), Vector{Matrix{T}}(obs.D)
     Z_sample, gamma_sample, omega_sample, tau_sample = model.Z_sample, model.gamma_sample, model.omega_sample, model.tau_sample
     mu_star_old, V_star_old = model.mu_gamma_star, model.V_gamma_star
     N, J, L, O, K = size(Y, 1), size(Y, 3), size(D[1], 1), size(obs.Y, 2), size(obs.Q, 2)
     M = model.M
+    
     # Fully update parameters of each γ using noisy gradients before moving to update parameters of next γ
     if !model.enable_parallel
         @inbounds for k in 1:K
@@ -1101,6 +1121,7 @@ function update_normal_variational_distribution2(
                             LAPACK.potri!('L', Vinv_star_old_j)
                             LinearAlgebra.copytri!(Vinv_star_old_j, 'L')
                             ELBO = 0
+
                             # Calculate the gradient estimate of the m-th sample
                             for m in 1:M
                                 gamma_ktzsm = gamma_sample[k][t][z + 1][s][m]
@@ -1163,10 +1184,6 @@ function update_normal_variational_distribution2(
                                 # println("gradient mu: $grad_mu_L")
                                 println("C*_$k$t$z$s: $C_star_old_j")
                                 println("gradient C: $grad_C_L")
-                            end
-
-                            if((k == 1) & (t == 1) & (z == 0) & (s == 1))
-                                println("$ELBO")
                             end
 
                             # Update mu and C with one step
@@ -1218,7 +1235,7 @@ function update_normal_variational_distribution2(
                         storage_kron_prod = view(model.storage_L2L2_par[tid], 1:len_gamma^2, 1:len_gamma^2)
                         storage_len_gamma_sqr = view(model.storage_Lsqr_par[tid], 1:len_gamma^2)
                         storage_len_gamma_sqr2 = view(model.storage_Lsqr2_par[tid], 1:len_gamma^2)
-                        storage_gradC = view(model.storage_gradC, 1:Int(len_gamma * (len_gamma + 1) / 2))
+                        storage_gradC = view(model.storage_gradC_par[tid], 1:Int(len_gamma * (len_gamma + 1) / 2))
                         # Generate commutation and duplication matrix
                         comm_j = view(model.storage_comm_par[tid], 1:len_gamma^2, 1:len_gamma^2)
                         dup_j = view(model.storage_dup_par[tid], 1:len_gamma^2, 1:Int(len_gamma * (len_gamma + 1) / 2))
@@ -1253,6 +1270,7 @@ function update_normal_variational_distribution2(
                             LAPACK.potri!('L', Vinv_star_old_j)
                             LinearAlgebra.copytri!(Vinv_star_old_j, 'L')
                             ELBO = 0
+
                             # Calculate the gradient estimate of the m-th sample
                             for m in 1:M
                                 gamma_ktzsm = gamma_sample[k][t][z + 1][s][m]
@@ -1278,20 +1296,24 @@ function update_normal_variational_distribution2(
                                 BLAS.gemv!('T', T(1), dup_j, storage_len_gamma_sqr2, T(1), fill!(storage_gradC, 0))
                                 # Calculate log(p(Y, β_(j)))
                                 log_prob_Ygamma = 0
+
                                 for i in 1:N
                                     if obs.group[i] != s
                                         continue
                                     end
                                     if t > 1
                                         prev_skill_profile = obs.skill_dict[argmax(Z_sample[i][t - 1][m])]
-                                        if prev_skill_profile[k] != z
-                                            continue
-                                        end
                                     end
+
+                                    if t > 1 && prev_skill_profile[k] != z
+                                        continue
+                                    end
+
                                     skill_profile = obs.skill_dict[argmax(Z_sample[i][t][m])]
                                     log_prob_Ygamma += log(sigmoid((2*skill_profile[k] - 1) * 
                                         dot(gamma_sample[k][t][z + 1][s][m], obs.X[k][t][i, :])))
                                 end
+                               
                                 num_features = length(gamma_ktzsm)
                                 for feature in 1:num_features
                                     tau = tau_sample[k][t][z + 1][feature][m]
@@ -1299,6 +1321,7 @@ function update_normal_variational_distribution2(
                                     u = obs.U[k][t][s, :]
                                     log_prob_Ygamma += - 1/(2 * tau) * (gamma_ktzsm[feature] - dot(u, omega))^2
                                 end
+
                                 gamma_minus_mu .= gamma_ktzsm
                                 gamma_minus_mu .-= mu_star_old_j
                                 log_q = -len_gamma / 2 * log(2 * pi) - 1 / 2 * logdet_V_j - 1 / 2 * dot(gamma_minus_mu, grad_mu_log_q)
@@ -1308,20 +1331,6 @@ function update_normal_variational_distribution2(
                                 # Update ELBO estimator
                                 ELBO = (m - 1) / m * ELBO + 1 / m * (log_prob_Ygamma - log_q)
                             end
-                            # Print ELBO, parameter and gradient if verbose
-                            if verbose
-                                println("ELBO: $ELBO")
-                                # println("mu*_$j: mu_star_old_j")
-                                # println("gradient mu: $grad_mu_L")
-                                println("C*_$k$t$z$s: $C_star_old_j")
-                                println("gradient C: $grad_C_L")
-                            end
-
-                            if((k == 1) & (t == 1) & (z == 0) & (s == 1))
-                                mu_tracker[iter] = mu_star_old_j[1]
-                                var_tracker[iter] = vech_C_star_old_j[1]
-                                ELBO_tracker[iter] = ELBO
-                            end
 
                             # Update mu and C with one step
                             step = init_step
@@ -1329,7 +1338,7 @@ function update_normal_variational_distribution2(
                                 step = step_iterator()
                             end
                             mu_star_old_j .+= sqrt(len_gamma) .* step .* grad_mu_L ./ norm(grad_mu_L)
-                            vech_C_star_old_j .-= len_gamma .* step .* vech_grad_C_L ./ norm(vech_grad_C_L)
+                            vech_C_star_old_j .+= len_gamma .* step .* vech_grad_C_L ./ norm(vech_grad_C_L)
                             # Set V_star_old_j = C * C'
                             BLAS.gemm!('N', 'T', T(1), C_star_old_j, C_star_old_j, T(1), fill!(V_star_old_j, 0))
                         end
@@ -1338,7 +1347,6 @@ function update_normal_variational_distribution2(
             end
         end
     end
-    return mu_tracker, var_tracker, ELBO_tracker
 end
 
 function update_normal_variational_distribution3(
@@ -1765,42 +1773,6 @@ function update_inverse_gamma_distribution(
                     model.b_tau_star[k][t][z + 1][feature] = exp(log_b)
                 end
             end
-        end
-    end
-end
-
-function update_inverse_gamma_distribution_va(
-    model           :: TDCModel;
-)
-    Threads.@threads for idx in collect(Iterators.product(1:K, 1:O, 0:1))
-        k, t, z = idx[1], idx[2], idx[3]
-        if t == 1 && z == 1
-            continue
-        end
-        num_features = size(obs.X[k][t], 2)
-        tr_features = Vector{AbstractFloat}(undef, num_features)
-        num_features_omega = size(obs.U[k][t], 2)
-        V_omega_star = zeros(num_features_omega, num_features_omega)
-        for feature in 1:num_features
-            sigma_omega_star = model.V_omega_star[k][t][z + 1][feature]
-            tr_features[feature] = tr(sigma_omega_star)
-            V_omega_star .+= sigma_omega_star
-        end
-        
-        for feature in 1:num_features
-            est = 0
-            # a_star = model.a_tau_star[k][t][z + 1][feature]
-            for s in 1:50
-                est += model.V_gamma_star[k][t][z + 1][s][feature, feature] + 
-                        (model.mu_gamma_star[k][t][z + 1][s][feature])^2 +
-                        dot(model.mu_omega_star[k][t][z + 1][feature], obs.U[k][t][s, :])^2 + 
-                        tr_features[feature] / sum(tr_features) * 
-                            tr(obs.U[k][t][s, :] * transpose(obs.U[k][t][s, :]) * V_omega_star)
-
-                # est += (model.mu_gamma_star[k][t][z + 1][s][feature] - dot(model.obs.U[k][t][s, :], model.mu_omega_star[k][t][z + 1][feature]))^2
-            end
-            # model.b_tau_star[k][t][z + 1][feature] = (model.b_tau_prior[k][t][z + 1][feature] * (a_star - 1) + (a_star - 1) / 2 * est) / (model.a_tau_prior[k][t][z + 1][feature] + 1 + S / 2)
-            model.b_tau_star[k][t][z + 1][feature] = 1/2 * est
         end
     end
 end
