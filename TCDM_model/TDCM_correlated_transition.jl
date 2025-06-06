@@ -38,6 +38,7 @@ struct TDCModel{T <: AbstractFloat}
     L_beta_prior        :: Vector{Matrix{T}} # Upper triangular Cholesky factor of prior inverse covariance matrix of betas
     mu_omega_prior      :: Vector{Vector{Vector{Vector{Vector{T}}}}}
     L_omega_prior       :: Vector{Vector{Vector{Vector{Matrix{T}}}}} # Upper triangular Cholesky factor of prior inverse covariance matrix of omegas
+    v_sigma_prior       :: Vector{Vector{Vector{T}}}
     a_tau_prior         :: Vector{Vector{Vector{Vector{T}}}}
     b_tau_prior         :: Vector{Vector{Vector{Vector{T}}}}
     # This option allocates extra memory based on number of threads availible in the environment
@@ -50,8 +51,8 @@ struct TDCModel{T <: AbstractFloat}
     V_gamma_star        :: Vector{Vector{Vector{Vector{Matrix{T}}}}}
     mu_omega_star       :: Vector{Vector{Vector{Vector{Vector{T}}}}}
     V_omega_star        :: Vector{Vector{Vector{Vector{Matrix{T}}}}}
-    a_tau_star          :: Vector{Vector{Vector{Vector{T}}}}
-    b_tau_star          :: Vector{Vector{Vector{Vector{T}}}}
+    v_sigma_star        :: Vector{Vector{Vector{T}}}
+    P_sigma_star        :: Vector{Vector{Vector{Matrix{T}}}}
     # Number of samples for noisy gradient
     M                   :: Int
     # Preallocated storage for samples from variational distribution
@@ -59,7 +60,7 @@ struct TDCModel{T <: AbstractFloat}
     beta_sample         :: Vector{Vector{Vector{T}}}
     gamma_sample        :: Vector{Vector{Vector{Vector{Vector{Vector{T}}}}}}
     omega_sample        :: Vector{Vector{Vector{Vector{Vector{Vector{T}}}}}}
-    tau_sample          :: Vector{Vector{Vector{Vector{Vector{T}}}}}
+    sigma_sample        :: Vector{Vector{Vector{Vector{Matrix{T}}}}}
     # Preallocated storage for noisy gradient descent calculations
     storage_L           :: Vector{T}
     storage_L2          :: Vector{T}
@@ -104,6 +105,7 @@ function TDCModel(
     L_beta_prior        :: Vector{Matrix{T}},
     mu_omega_prior      :: Vector{Vector{Vector{Vector{Vector{T}}}}},
     L_omega_prior       :: Vector{Vector{Vector{Vector{Matrix{T}}}}},
+    v_sigma_prior       :: Vector{Vector{Vector{T}}},
     a_tau_prior         :: Vector{Vector{Vector{Vector{T}}}},
     b_tau_prior         :: Vector{Vector{Vector{Vector{T}}}},
     M                   :: Int;
@@ -161,13 +163,13 @@ function TDCModel(
     end
     mu_omega_star = Vector{Vector{Vector{Vector{Vector{T}}}}}(undef, K)
     V_omega_star = Vector{Vector{Vector{Vector{Matrix{T}}}}}(undef, K)
-    a_tau_star = Vector{Vector{Vector{Vector{T}}}}(undef, K)
-    b_tau_star = Vector{Vector{Vector{Vector{T}}}}(undef, K)
+    v_sigma_star = Vector{Vector{Vector{T}}}(undef, K)
+    P_sigma_star = Vector{Vector{Vector{Matrix{T}}}}(undef, K)
     for k in 1:K
         mu_omega_star[k] = Vector{Vector{Vector{Vector{T}}}}(undef, O)
         V_omega_star[k] = Vector{Vector{Vector{Matrix{T}}}}(undef, O)
-        a_tau_star[k] = Vector{Vector{Vector{T}}}(undef, O)
-        b_tau_star[k] = Vector{Vector{Vector{T}}}(undef, O)
+        v_sigma_star[k] = Vector{Vector{T}}(undef, O)
+        P_sigma_star[k] = Vector{Vector{Matrix{T}}}(undef, O)
         for t in 1:O
             num_features_gamma = size(obs.X[k][t], 2)
             num_features_omega = size(obs.U[k][t], 2)
@@ -180,21 +182,21 @@ function TDCModel(
                 V_omega_star[k][t][1] = Vector{Matrix{T}}(undef, 1)
                 V_omega_star[k][t][1][1] = Matrix{T}(1.0I, num_features_omega, num_features_omega)
 
-                a_tau_star[k][t] = Vector{Vector{T}}(undef, 1)
-                a_tau_star[k][t][1] = ones(1) .* S / 2
+                v_sigma_star[k][t] = Vector{T}(undef, 1)
+                v_sigma_star[k][t][1] = num_features_gamma - 1
 
-                b_tau_star[k][t] = Vector{Vector{T}}(undef, 1)
-                b_tau_star[k][t][1] = ones(1)
+                P_sigma_star[k][t] = Vector{Matrix{T}}(undef, 1)
+                P_sigma_star[k][t][1] = Matrix{T}(1.0I, num_features_gamma, num_features_gamma)
             else
                 mu_omega_star[k][t] = Vector{Vector{Vector{T}}}(undef, 2)
                 V_omega_star[k][t] = Vector{Vector{Matrix{T}}}(undef, 2)
-                a_tau_star[k][t] = Vector{Vector{T}}(undef, 2)
-                b_tau_star[k][t] = Vector{Vector{T}}(undef, 2)
+                v_sigma_star[k][t] = Vector{T}(undef, 2)
+                P_sigma_star[k][t] = Vector{Matrix{T}}(undef, 2)
                 for z in 1:2
                     mu_omega_star[k][t][z] = Vector{Vector{T}}(undef, num_features_gamma)
                     V_omega_star[k][t][z] = Vector{Matrix{T}}(undef, num_features_gamma)
-                    a_tau_star[k][t][z] = ones(num_features_gamma) .* S / 2
-                    b_tau_star[k][t][z] = ones(num_features_gamma) .* 1
+                    v_sigma_star[k][t][z] = num_features_gamma - 1
+                    P_sigma_star[k][t][z] = Matrix{T}(1.0I, num_features_gamma, num_features_gamma)
                     for m in 1:num_features_gamma
                         mu_omega_star[k][t][z][m] = zeros(num_features_omega)
                         V_omega_star[k][t][z][m] = Matrix(1.0I, num_features_omega, num_features_omega)
@@ -251,10 +253,10 @@ function TDCModel(
         end
     end
     omega_sample = Vector{Vector{Vector{Vector{Vector{Vector{T}}}}}}(undef, K)
-    tau_sample = Vector{Vector{Vector{Vector{Vector{T}}}}}(undef, K)
+    sigma_sample = Vector{Vector{Vector{Vector{Matrix{T}}}}}(undef, K)
     for k in 1:K
         omega_sample[k] = Vector{Vector{Vector{Vector{Vector{T}}}}}(undef, O)
-        tau_sample[k] = Vector{Vector{Vector{Vector{T}}}}(undef, O)
+        sigma_sample[k] = Vector{Vector{Vector{Matrix{T}}}}(undef, O)
         for t in 1:O
             num_features_gamma = size(obs.X[k][t], 2)
             num_features_omega = size(obs.U[k][t], 2)
@@ -263,24 +265,26 @@ function TDCModel(
                 omega_sample[k][t][1] = Vector{Vector{Vector{T}}}(undef, 1)
                 omega_sample[k][t][1][1] = Vector{Vector{T}}(undef, M)
 
-                tau_sample[k][t] = Vector{Vector{Vector{T}}}(undef, 1)
-                tau_sample[k][t][1] = Vector{Vector{T}}(undef, 1)
-                tau_sample[k][t][1][1] = Vector{T}(undef, M)
+                sigma_sample[k][t] = Vector{Vector{Matrix{T}}}(undef, 1)
+                sigma_sample[k][t][1] = Vector{Matrix{T}}(undef, M)
                 for m in 1:M
                     omega_sample[k][t][1][1][m] = Vector{T}(undef, num_features_omega)
+                    sigma_sample[k][t][1][m] = Matrix{T}(undef, num_features_gamma, num_features_gamma)
                 end
             else
                 omega_sample[k][t] = Vector{Vector{Vector{Vector{T}}}}(undef, 2)
-                tau_sample[k][t] = Vector{Vector{Vector{T}}}(undef, 2)
+                sigma_sample[k][t] = Vector{Vector{Matrix{T}}}(undef, 2)
                 for z in 1:2
                     omega_sample[k][t][z] = Vector{Vector{Vector{T}}}(undef, num_features_gamma)
-                    tau_sample[k][t][z] = Vector{Vector{T}}(undef, num_features_gamma)
+                    sigma_sample[k][t][z] = Vector{Matrix{T}}(undef, M)
                     for g in 1:num_features_gamma
                         omega_sample[k][t][z][g] = Vector{Vector{T}}(undef, M)
-                        tau_sample[k][t][z][g] = Vector{T}(undef, M)
                         for m in 1:M
                             omega_sample[k][t][z][g][m] = Vector{T}(undef, num_features_omega)
                         end
+                    end
+                    for m in 1:M
+                        sigma_sample[k][t][z][m] = Matrix{T}(undef, num_features_gamma, num_features_gamma)
                     end
                 end
             end
@@ -439,7 +443,11 @@ function sample_Ω(
     idx_time        :: Int,
     indicator_skill :: Int
 )
-    
+    # Create variational distribution from model parameters of τ
+    sigma_ktz_variational_distribution = InverseWishart(model.v_sigma_star[idx_skill][idx_time][indicator_skill + 1],
+                                            model.P_sigma_star[idx_skill][idx_time][indicator_skill + 1])
+    # Populate preallocated arrays with samples from variational distribution
+    rand!(sigma_ktz_variational_distribution, model.sigma_sample[idx_skill][idx_time][indicator_skill + 1])
 end
 
 function sample_τ(
@@ -1791,7 +1799,85 @@ function update_inverse_wishart_distribution(
     step        :: T,
     maxiter     :: Int
 ) where T <: AbstractFloat
+    obs = model.obs
+    O, K, S = size(obs.Y, 2), size(obs.Q, 2), size(obs.U[1][1], 1)
+    sigma_sample, gamma_sample, omega_sample = model.sigma_sample, model.gamma_sample, model.omega_sample
+    M = model.M
+    if !model.enable_parallel
+        for idx in Iterators.product(1:K, 1:O, 0:1)
+            k, t, z = idx[1], idx[2], idx[3]
+            if t == 1 && z == 1
+                continue
+            end
+            
+            P_sigma_star = model.P_sigma_star[k][t][z]
+            # Perform gradient descent update of mu_j and V_j
+            len_gamma = length(v_sigma_star)
+            # Assign storage for gradient terms
+            # Memory assigned from preallocated storage
+            # Memory has to be strided (equal stride between memory addresses) to work with BLAS and LAPACK 
+            # (important for vectorized matricies to be strided if we want to use them for linear algebra)
+            # Matricies are stored column major in Julia, so memory is assigned by column left to right
+            grad_mu_L = view(model.storage_L, 1:len_gamma)
+            grad_C_L = view(model.storage_LL2, 1:len_gamma, 1:len_gamma)
+            vech_grad_C_L = view(grad_C_L, [len_gamma * (j - 1) + i for j in 1:len_gamma for i in j:len_gamma]) # Uses same memory as grad_C_L
+            grad_mu_log_q = view(model.storage_L2, 1:len_gamma)
+            vec_grad_V_log_q = view(model.storage_LL3, 1:len_gamma^2)
+            grad_V_log_q = reshape(vec_grad_V_log_q, len_gamma, len_gamma) # Uses same memory as vec_grad_V_log_q
+            # Assign storage for calculating intermediate terms for gradient
+            Vinv_star_old_j = view(model.storage_LL, 1:len_gamma, 1:len_gamma)
+            omega_minus_mu = view(model.storage_L3, 1:len_gamma)
+            L_omega_minus_mu = view(model.storage_L4, 1:len_gamma)
+            C_star_old_j = view(model.storage_C, 1:len_gamma, 1:len_gamma)
+            vech_C_star_old_j = view(C_star_old_j, [len_gamma * (j - 1) + i for j in 1:len_gamma for i in j:len_gamma]) # Uses same memory as C_star_old_j
+            fill!(C_star_old_j, 0)
+            storage_kron_prod = view(model.storage_L2L2, 1:len_gamma^2, 1:len_gamma^2)
+            storage_len_gamma_sqr = view(model.storage_Lsqr, 1:len_gamma^2)
+            storage_len_gamma_sqr2 = view(model.storage_Lsqr2, 1:len_gamma^2)
+            storage_gradC = view(model.storage_gradC, 1:Int(len_gamma * (len_gamma + 1) / 2))
+            # Generate commutation and duplication matrix
+            comm_j = view(model.storage_comm, 1:len_gamma^2, 1:len_gamma^2)
+            dup_j = view(model.storage_dup, 1:len_gamma^2, 1:Int(len_gamma * (len_gamma + 1) / 2))
+            get_comm!(comm_j, len_gamma)
+            get_dup!(dup_j, len_gamma)
+            # Assign len_gamma by len_gamma identity matrix
+            I_j = view(model.I_LL, 1:len_gamma, 1:len_gamma)
+            
+            for iter in 1:maxiter
+                
+                # Sample β from variational distribution
+                sample_Ω(model, k, t, z)
+                grad_v_L = 0
+                fill!(grad_C_L, 0)
+                # Copy V* into storage
+                copy!(Vinv_star_old_j, V_star_old_j)
+                # Perform cholesky decomposition on V*
+                # After this step, the lower triangle of Vinv_star_old_j will contain the lower triangular cholesky factor of V*
+                LAPACK.potrf!('L', Vinv_star_old_j)
+                # Calculate log|V_j| from diagonal of cholesky decomposition
+                logdet_V_j = 0
+                for b in 1:len_omega
+                    logdet_V_j += 2 * log(Vinv_star_old_j[b, b])
+                end
+                # Copy lower triangular cholesky factor into preallocated storage
+                for k in 1:len_omega
+                    for l in 1:k
+                        C_star_old_j[k, l] = Vinv_star_old_j[k, l]
+                    end
+                end
+                # Perform in place matrix inverse on positive definite V* matrix to get V* inverse
+                LAPACK.potri!('L', Vinv_star_old_j)
+                LinearAlgebra.copytri!(Vinv_star_old_j, 'L')
+                ELBO = 0
 
-    
+                for m in 1:M
+
+                end
+            end
+
+        end
+    else
+
+    end
 end
 ;
