@@ -1,0 +1,301 @@
+---
+title: "Social Capital and Children's Development EDA"
+output: html_document
+date: "2025-04-08"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(torch)
+```
+
+```{r}
+# All data
+load("Raw data/35481-0012-Data.rda")
+
+# Attendance data
+load("Raw data/35481-0006-Data.rda")
+
+Alldata = da35481.0012
+```
+
+```{r}
+# Omit 87 cases with missing information on school and FAST treatment
+school_missing_idx = is.na(Alldata$Y1SCHOOLID)
+Alldata = Alldata[!school_missing_idx,]
+
+# Individual level covariates
+X_ind_idx = c("STUDENTID", "Y1SCHOOLID", "FAST", "Q2A", "Q2B", "Q17A", "Q17B", "A5A", "DOB", "GENDER", "RACE_ETHNICITY", "LUNCH_STATUS", "ELL_STATUS", "SPED_STATUS", "KINDERGARTEN", "ATTENDANCE_RATE", "MATH_PCTZ", "READ_PCTZ")
+
+X_ind = Alldata[,X_ind_idx]
+
+# Add change school variable
+X_ind["CHANGE_SCHOOL"] = Alldata$Y1SCHOOLID != Alldata$Y3SCHOOLID
+
+# Merge with FAST attendance data
+X_ind = left_join(X_ind, da35481.0006, by = "STUDENTID")
+
+# One hot encode race ethnicity data
+X_ind = mutate(X_ind, RACE_NATIVE = ifelse(RACE_ETHNICITY %in% "(1) Native American", 1, 0),
+               RACE_ASIANPI = ifelse(RACE_ETHNICITY %in% "(2) Asian or Pacific Islander", 1, 0),
+               RACE_BLACK = ifelse(RACE_ETHNICITY %in% "(3) Black", 1, 0),
+               RACE_HISP = ifelse(RACE_ETHNICITY %in% "(4) Hispanic", 1, 0),
+               RACE_WHITE = ifelse(RACE_ETHNICITY %in% "(5) White", 1, 0),
+               RACE_MISSING = ifelse(is.na(RACE_ETHNICITY), 1, 0)
+               )
+
+# Group level covariates
+X_group_idx = c("Y1SCHOOLID", "FAST", "PHOENIX", "DISTRICTID", "P_RE_BLACK", "P_RE_WHITE", "P_RE_HISP", "P_RE_OTHER", "P_FRPL", "P_READ", "P_MATH")
+X_group = Alldata[,X_group_idx]
+X_group = X_group %>%
+            group_by(Y1SCHOOLID) %>%
+            summarise(FAST = first(FAST),
+                      PHOENIX = first(PHOENIX), 
+                      DISTRICTID = first(DISTRICTID), 
+                      P_RE_BLACK = first(P_RE_BLACK), 
+                      P_RE_WHITE = first(P_RE_WHITE), 
+                      P_RE_HISP = first(P_RE_HISP), 
+                      P_RE_OTHER = first(P_RE_OTHER), 
+                      P_FRPL = first(P_FRPL), 
+                      P_READ = first(P_READ), 
+                      P_MATH = first(P_MATH)) %>%
+            arrange(Y1SCHOOLID)
+
+# One hot encode School District
+X_group = mutate(X_group, DISTRICT1 = ifelse(X_group$DISTRICTID == 1, 1, 0),
+                          DISTRICT2 = ifelse(X_group$DISTRICTID == 2, 1, 0),
+                          DISTRICT3 = ifelse(X_group$DISTRICTID == 3, 1, 0),
+                          DISTRICT4 = ifelse(X_group$DISTRICTID == 4, 1, 0)
+                          )
+
+X_group = data.frame(X_group)
+```
+
+
+```{r}
+ for(i in 1:ncol(X_ind)) {
+   # Ensure column has numeric type
+   X_ind[,i] = as.numeric(X_ind[,i])
+ }
+
+ for(i in 1:ncol(X_group)) {
+   # Ensure column has numeric type
+   X_group[,i] = as.numeric(X_group[,i])
+ }
+
+# Simplify some ordinal categorical questionnaire items to binary
+X_ind = mutate(X_ind, Q2A = ifelse(Q2A >= 2, 1, -1), # Two or more adults in household
+               Q2B = ifelse(Q2B >= 2, 1, -1), # Two or more children in household 
+               Q17A = ifelse(Q17A >= 4, 1, -1), # Speak Spanish often or always
+               Q17B = ifelse(Q17B >= 4, 1, -1), # Speak English often or always
+              )
+X_ind = mutate(X_ind, GENDER = ifelse(GENDER == 1, -1, 1))
+```
+
+
+```{r}
+FAST_idx = X_ind$FAST == 2
+for(col in paste0("ATTEND", 1:8)) {
+  # Fill in nonattendance value for non-FAST students
+  X_ind[!FAST_idx, col] = 1
+}
+
+# Create FAST attendance rate feature
+X_ind$FAST_ATTEND_RATE = rowSums(X_ind[,paste0("ATTEND", 1:8)] - 1) / 8
+```
+
+
+```{r}
+# Drop unused columns
+drop_ind = c("FAST", "RACE_ETHNICITY")
+drop_group = c("DISTRICTID")
+
+X_ind = X_ind[, !(names(X_ind) %in% drop_ind)]
+X_group = X_group[, !(names(X_group) %in% drop_group)]
+```
+
+
+```{r}
+SDQ_YR1_cols = paste0("Q3", LETTERS[1:25])
+SDQ_YR3_cols = paste0("S4", LETTERS[1:25])
+```
+
+```{r}
+# Combine questionnaire data
+full = Alldata[,c(SDQ_YR1_cols, SDQ_YR3_cols)]
+
+# Remove students who did not respond to any questions
+nonresponse_idx = which(rowSums(is.na(full)) == 50)
+full = full[-nonresponse_idx,]
+X_ind = X_ind[-nonresponse_idx,]
+```
+
+```{r}
+colSums(is.na(X_ind))
+```
+```{r}
+colSums(is.na(X_group))
+```
+
+```{r}
+for(i in 1:ncol(X_ind)) {
+   # Impute NA values with mean of column
+   X_ind[is.na(X_ind[,i]),i] = mean(X_ind[,i], na.rm = TRUE)
+ }
+```
+
+```{r}
+# Table of how many questions students did not answer in year 1
+ table(rowSums(is.na(full[,SDQ_YR1_cols])))
+```
+
+```{r}
+# Table of how many questions students did not answer in year 3
+ table(rowSums(is.na(full[,SDQ_YR3_cols])))
+```
+
+```{r}
+# Number of students who answered questions requiring each attribute at both time points
+q_skill = c(5, 1, 2, 5, 3, 4, 3, 2, 5, 1, 4, 3, 2, 4, 1, 2, 5, 3, 4, 5, 1, 3, 4, 2, 1)
+
+for(i in 1:5) {
+  idx_Y1 = which(q_skill == i)
+  idx_Y3 = which(q_skill == i) + 25
+  cat(paste("Atrribute", i))
+  print(table((rowSums(!is.na(full[,idx_Y1])) > 0) & (rowSums(!is.na(full[,idx_Y3])) > 0)))
+  cat("\n")
+}
+```
+
+
+```{r}
+# Flip responses to reflect positive questions
+positive_q_indicator = c(1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 1)
+positive_q_indicator = rep(positive_q_indicator, 2)
+
+Y = full
+
+for(i in 1:ncol(Y)) {
+  Y[,i] = as.numeric(Y[,i])
+  if(!positive_q_indicator[i]) {
+    Y[,i] = -Y[,i] + 4
+  }
+  Y[,i] = as.numeric(Y[,i] == 3)
+}
+
+# Format responses into tensor 
+Y = torch_tensor(as.matrix(Y))
+Y = Y$view(c(nrow(full), 2, 25))
+
+# Convert tensor to array
+Y = as_array(Y)
+```
+
+```{r}
+q_skill = c(5, 1, 2, 5, 3, 4, 3, 2, 5, 1, 4, 3, 2, 4, 1, 2, 5, 3, 4, 5, 1, 3, 4, 2, 1)
+Q = matrix(rep(rep(0, 5), 25), ncol = 5)
+for(j in 1:25) {
+  Q[j, q_skill[j]] = 1
+}
+```
+
+```{r}
+# Convert School ID number to 1, 2, 3, ..., 52
+group = as.numeric(as.factor(X_ind$Y1SCHOOLID))
+```
+
+```{r}
+# Y contains NA values
+
+save(Y, file = "Modelling objects/Y.RData")
+save(Q, file = "Modelling objects/Q.RData")
+save(group, file = "Modelling objects/group.RData")
+
+individual_covariates = X_ind[, c(-1, -2)]
+save(individual_covariates, file = "Individual level covariates.RData")
+save(X_group, file = "Group level covariates.RData")
+save(full, file = "Item response.RData")
+```
+
+```{r}
+# Keep only students who answered every question
+
+full_answer_idx = rowSums(is.na(full)) == 0
+full = full[full_answer_idx, ]
+Y = full
+
+for(i in 1:ncol(Y)) {
+  Y[,i] = as.numeric(Y[,i])
+  if(!positive_q_indicator[i]) {
+    Y[,i] = -Y[,i] + 4
+  }
+  Y[,i] = as.numeric(Y[,i] == 3)
+}
+
+# Format responses into tensor 
+Y = torch_tensor(as.matrix(Y))
+Y = Y$view(c(nrow(full), 2, 25))
+
+X_ind = X_ind[full_answer_idx, ]
+group = group[full_answer_idx]
+
+Y = as_array(Y)
+```
+
+```{r}
+save(Y, file = "Modelling objects/Y_omit_NA.RData")
+save(group, file = "Modelling objects/group_omit_NA.RData")
+
+individual_covariates = X_ind[, c(-1, -2)]
+save(individual_covariates, file = "Individual level covariates with NA rows omitted.RData")
+```
+
+```{r}
+# Create data for TDCM fitting algorithms
+N = 987
+K = 5 # skills
+S = 52 # Schools
+
+# Select fewer individual level covariates
+# X_idx_1 = c("Q17B", "GENDER")
+X_idx_2 = c("Q2A", "Q2B", "Q17B", "GENDER", "ATTENDANCE_RATE", "FAST_ATTEND_RATE")
+
+# X1 = as.matrix(X_ind[,X_idx_1])
+X1 = rep(1, N)
+X2 = as.matrix(cbind(rep(1, N), X_ind[,X_idx_2]))
+
+
+# Select fewer group level covariates
+U_idx = c("FAST", "PHOENIX", "P_RE_HISP")
+
+U1 = as.matrix(cbind(rep(1, S), X_group[,U_idx]))
+
+X = list()
+U = list()
+for(k in 1:K){
+  X[[k]] = list(X1, X2)
+  U[[k]] = list(U1, U1)
+}
+
+data_SCCD = list()
+data_SCCD$Y = Y
+data_SCCD$X_group = U
+data_SCCD$X_ind = X
+data_SCCD$group = group
+data_SCCD$Q_matrix = Q
+
+data = data_SCCD
+save(data, file = "TDCM_empirical_data.RData")
+```
+
+```{r}
+setwd("../TCDM_model")
+source("TDCM_Ind.R")
+res = VB_Ind_fit(data, beta_interact = F, max_iter = 200)
+```
+```{r}
+save(res, file = "VB_results.RData")
+```
+
+

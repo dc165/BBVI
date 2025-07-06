@@ -29,7 +29,7 @@ VB_Ind_fit = function(data, beta_interact = T, max_iter = 100){
   A_K = transpose(A$permute(c(2,1,3))$matmul(torch_tensor(2^((indT-1):0)))+1)
 
   # Initialize Beta
-  M_beta_init = lapply(beta_dim, function(x) torch_zeros(x))
+  M_beta_init = lapply(beta_dim, function(x) torch_ones(x))
   M_beta = lapply(beta_dim, function(x) torch_zeros(x))
   V_beta_init = lapply(beta_dim, function(x) torch_eye(x))
   V_beta = lapply(beta_dim, function(x) torch_eye(x))

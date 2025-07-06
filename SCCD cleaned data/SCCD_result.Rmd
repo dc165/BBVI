@@ -1,0 +1,34 @@
+---
+title: "SCCD result"
+author: "Daniel Chen"
+date: "2025-06-19"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+load("VB_results.RData")
+```
+
+```{r}
+for(k in 1:5) {
+  hist(res$E_gamma[[k]][[2]][1,,6], breaks = 30)
+}
+```
+
+```{r}
+res$E_omega[[5]][[2]][1,7,]
+```
+```{r}
+plot(as.factor(ifelse(X_group$PHOENIX == 1, "Phoenix", "Non-Phoenix")), res$E_gamma[[5]][[2]][1,,7], ylab = "individual level FAST attendance effect")
+```
+```{r}
+plot(as.factor(X_group$P_RE_HISP), res$E_gamma[[5]][[2]][1,,7], ylab = "individual level FAST attendance effect")
+```
+```{r}
+plot(as.factor(ifelse(X_group$FAST == 1, "Not FAST School", "FAST School")), res$E_gamma[[5]][[2]][1,,7], ylab = "individual level FAST attendance effect")
+```
+
