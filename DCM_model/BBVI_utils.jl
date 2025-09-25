@@ -6,7 +6,7 @@ function generate_features(q::Vector{Int})
     masteries = [1:1:num_skills;]'[q .== 1]
     # add intercept term to features
     features = [zeros(Int64, num_skills)]
-    # combinations produce main effect and interaction terms in terms of enumerated skills
+    # combinations produce all possible combinations of enumerated skills representing all possible main effects and interactions
     for comb in combinations(masteries)
         # turn enumerated skill combinations back into binary skill labels
         feature = zeros(Int64, num_skills)
@@ -20,7 +20,9 @@ function generate_features(q::Vector{Int})
 end
 
 function generate_delta(
-    Q::Matrix{Int})
+    Q           :: Matrix{Int};
+    interacts   :: Bool=true
+)
     J, K, L = size(Q, 1), size(Q, 2), 2^size(Q, 2)
     D = Matrix{Int64}[]
     profiles = [ reverse(digits(n, base=2, pad=K)) for n in 0:(L-1) ]
@@ -29,8 +31,12 @@ function generate_delta(
         # number of skills measured by question j
         num_masteries = sum(Q[j, :])
         features = generate_features(Q[j,:])
-        d = zeros(L, 2^num_masteries)
-        for k in 1:2^num_masteries
+        num_features = num_masteries
+        if interacts
+            num_features = 2^num_masteries
+        end
+        d = zeros(L, num_features)
+        for k in 1:num_features
             for l in 1:L
                 # d[l, k] indicates whether all skills in feature k are mastered by attribute profile l
                 d[l, k] = Int64(dot(profiles[l], features[k]) >= sum(features[k]))
@@ -138,6 +144,18 @@ end
     while 1/counter > 1e8
         @yield initial_size / counter
         counter += 1
+    end
+end
+
+function deepfill!(arr::AbstractArray, item)
+    if !(isa(arr[1], AbstractArray))
+        fill!(arr, item)
+    else
+        for sub in arr
+            if isa(sub, AbstractArray)
+                deepfill!(sub, item)
+            end
+        end
     end
 end
 ;

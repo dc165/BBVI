@@ -181,7 +181,7 @@ if(FALSE){
 
 # data = data_generate(N_per_group = 100, K = 3, J = 21, C = 50, indT = 2, Q_matrix = as.matrix(read.table("Q_3.txt")), rand_N = F, rand_cor = 0, N_dataset = 1, beta_interact = T, seed = 2024)
 
-data = data_generate(N_per_group = 1000, K = 3, J = 21, C = 50, indT = 2, rand_N = F, rand_cor = 0, N_dataset = 1, beta_interact = T, seed = 2024)
+data = data_generate(N_per_group = 100, K = 3, J = 21, C = 50, indT = 3, rand_N = F, rand_cor = 0, N_dataset = 1, beta_interact = T, seed = 2024)
 
 res = VB_Ind_fit(data, beta_interact = T, max_iter = 300)
 

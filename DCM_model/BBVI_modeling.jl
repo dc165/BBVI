@@ -21,63 +21,81 @@ end
 
 struct DCModel{T <: AbstractFloat}
     # data
-    obs                 :: DCMObs
+    obs                     :: DCMObs
     # Prior distribution parameters
-    d0                  :: Vector{T}
-    a0                  :: T
-    b0                  :: T
+    d0                      :: Vector{T}
+    a0                      :: T
+    b0                      :: T
     # This option allocates extra memory based on number of threads availible in the environment
-    enable_parallel     :: Bool
+    enable_parallel         :: Bool
     # Variational distribution parameters
-    pi_star             :: Vector{Vector{T}}
-    mu_star             :: Vector{Vector{T}}
-    V_star              :: Vector{Matrix{T}}
-    d_star              :: Vector{T}
-    a_star              :: Vector{T}
-    b_star              :: Vector{T}
+    pi_star                 :: Vector{Vector{T}}
+    mu_star                 :: Vector{Vector{T}}
+    V_star                  :: Vector{Matrix{T}}
+    d_star                  :: Vector{T}
+    a_star                  :: Vector{T}
+    b_star                  :: Vector{T}
     # Number of samples for noisy gradient
-    M                   :: Int
+    M                       :: Int
     # Preallocated storage for samples from variational distribution
-    Z_sample            :: Vector{Vector{Vector{Int}}}
-    beta_sample         :: Vector{Vector{Vector{T}}}
-    pi_sample           :: Vector{Vector{T}}
-    sigma2_sample       :: Vector{T}
+    Z_sample                :: Vector{Vector{Vector{Int}}}
+    beta_sample             :: Vector{Vector{Vector{T}}}
+    pi_sample               :: Vector{Vector{T}}
+    sigma2_sample           :: Vector{T}
     # Preallocated storage for noisy gradient descent calculations
-    storage_L           :: Vector{T}
-    storage_L2          :: Vector{T}
-    storage_L3          :: Vector{T}
-    storage_L4          :: Vector{T}
-    storage_LL          :: Matrix{T}
-    storage_LL2         :: Matrix{T}
-    storage_LL3         :: Matrix{T}
-    storage_LL4         :: Matrix{T}
+    storage_L               :: Vector{T}
+    storage_L2              :: Vector{T}
+    storage_L3              :: Vector{T}
+    storage_L4              :: Vector{T}
+    storage_LL              :: Matrix{T}
+    storage_LL2             :: Matrix{T}
+    storage_LL3             :: Matrix{T}
+    storage_LL4             :: Matrix{T}
     # Preallocated storage for matrix vectorization operations
-    storage_comm        :: Matrix{T}
-    storage_dup         :: Matrix{T}
-    storage_Lsqr        :: Vector{T}
-    storage_Lsqr2       :: Vector{T}
-    storage_L2L2        :: Matrix{T}
-    storage_C           :: Matrix{T}
-    storage_gradC       :: Vector{T}
+    storage_comm            :: Matrix{T}
+    storage_dup             :: Matrix{T}
+    storage_Lsqr            :: Vector{T}
+    storage_Lsqr2           :: Vector{T}
+    storage_L2L2            :: Matrix{T}
+    storage_C               :: Matrix{T}
+    storage_gradC           :: Vector{T}
     # Preallocated Identity matrix
-    I_LL                :: Matrix{T}
+    I_LL                    :: Matrix{T}
     # Preallocated storage for parallel noisy gradient descent calculations
-    storage_L_par       :: Vector{Vector{T}}
-    storage_L2_par      :: Vector{Vector{T}}
-    storage_L3_par      :: Vector{Vector{T}}
-    storage_L4_par      :: Vector{Vector{T}}
-    storage_LL_par      :: Vector{Matrix{T}}
-    storage_LL2_par     :: Vector{Matrix{T}}
-    storage_LL3_par     :: Vector{Matrix{T}}
-    storage_LL4_par     :: Vector{Matrix{T}}
+    storage_L_par           :: Vector{Vector{T}}
+    storage_L2_par          :: Vector{Vector{T}}
+    storage_L3_par          :: Vector{Vector{T}}
+    storage_L4_par          :: Vector{Vector{T}}
+    storage_LL_par          :: Vector{Matrix{T}}
+    storage_LL2_par         :: Vector{Matrix{T}}
+    storage_LL3_par         :: Vector{Matrix{T}}
+    storage_LL4_par         :: Vector{Matrix{T}}
     # Preallocated storage for parallel matrix vectorization operations
-    storage_comm_par    :: Vector{Matrix{T}}
-    storage_dup_par     :: Vector{Matrix{T}}
-    storage_Lsqr_par    :: Vector{Vector{T}}
-    storage_Lsqr2_par   :: Vector{Vector{T}}
-    storage_L2L2_par    :: Vector{Matrix{T}}
-    storage_C_par       :: Vector{Matrix{T}}
-    storage_gradC_par   :: Vector{Vector{T}}
+    storage_comm_par        :: Vector{Matrix{T}}
+    storage_dup_par         :: Vector{Matrix{T}}
+    storage_Lsqr_par        :: Vector{Vector{T}}
+    storage_Lsqr2_par       :: Vector{Vector{T}}
+    storage_L2L2_par        :: Vector{Matrix{T}}
+    storage_C_par           :: Vector{Matrix{T}}
+    storage_gradC_par       :: Vector{Vector{T}}
+    # Preallocated storage for control variate calculations
+    storage_grad_q_L        :: Vector{T}
+    storage_grad_q_LL       :: Vector{T}
+    storage_grad_L          :: Vector{T}
+    storage_grad_LL         :: Vector{T}
+    storage_S_f_L           :: Vector{T}
+    storage_S_h_L           :: Vector{T}
+    storage_S_f_LL          :: Vector{T}
+    storage_S_h_LL          :: Vector{T}
+    # Preallocated storage for parallel control variate calculations
+    storage_grad_q_L_par    :: Vector{Vector{T}}
+    storage_grad_q_LL_par   :: Vector{Vector{T}}
+    storage_grad_L_par      :: Vector{Vector{T}}
+    storage_grad_LL_par     :: Vector{Vector{T}}
+    storage_S_f_L_par       :: Vector{Vector{T}}
+    storage_S_h_L_par       :: Vector{Vector{T}}
+    storage_S_f_LL_par      :: Vector{Vector{T}}
+    storage_S_h_LL_par      :: Vector{Vector{T}}
 end
 
 function DCModel(
@@ -143,6 +161,15 @@ function DCModel(
     storage_gradC = Vector{T}(undef, Int(L*(L+1)/2))
     # Preallocate Identity matrix
     I_LL = Matrix{T}(I, L, L)
+    # Preallocate storage for control variate calculations
+    storage_grad_q_L = Vector{T}(undef, L)
+    storage_grad_q_LL = Vector{T}(undef, Int(L*(L+1)/2))
+    storage_grad_L = Vector{T}(undef, L)
+    storage_grad_LL = Vector{T}(undef, Int(L*(L+1)/2))
+    storage_S_f_L = Vector{T}(undef, L)
+    storage_S_h_L = Vector{T}(undef, L)
+    storage_S_f_LL = Vector{T}(undef, Int(L*(L+1)/2))
+    storage_S_h_LL = Vector{T}(undef, Int(L*(L+1)/2))
     # Allocate optional space for parallel computing
     nthreads = Threads.nthreads()
     storage_L_par = Vector{Vector{T}}(undef, nthreads)
@@ -160,6 +187,14 @@ function DCModel(
     storage_L2L2_par = Vector{Matrix{T}}(undef, nthreads)
     storage_C_par = Vector{Matrix{T}}(undef, nthreads)
     storage_gradC_par = Vector{Vector{T}}(undef, nthreads)
+    storage_grad_q_L_par = Vector{Vector{T}}(undef, nthreads)
+    storage_grad_q_LL_par = Vector{Vector{T}}(undef, nthreads)
+    storage_grad_L_par = Vector{Vector{T}}(undef, nthreads)
+    storage_grad_LL_par = Vector{Vector{T}}(undef, nthreads)
+    storage_S_f_L_par = Vector{Vector{T}}(undef, nthreads)
+    storage_S_h_L_par = Vector{Vector{T}}(undef, nthreads)
+    storage_S_f_LL_par = Vector{Vector{T}}(undef, nthreads)
+    storage_S_h_LL_par = Vector{Vector{T}}(undef, nthreads)
     if enable_parallel
         storage_L_par[1] = storage_L
         storage_L2_par[1] = storage_L2
@@ -175,7 +210,15 @@ function DCModel(
         storage_Lsqr2_par[1] = storage_Lsqr2
         storage_L2L2_par[1] = storage_L2L2
         storage_C_par[1] = storage_C
-        storage_gradC_par[1] = storage_gradC_par
+        storage_gradC_par[1] = storage_gradC
+        storage_grad_q_L_par[1] = storage_grad_q_L
+        storage_grad_q_LL_par[1] = storage_grad_q_LL
+        storage_grad_L_par[1] = storage_grad_L
+        storage_grad_LL_par[1] = storage_grad_LL
+        storage_S_f_L_par[1] = storage_S_f_L
+        storage_S_h_L_par[1] = storage_S_h_L
+        storage_S_f_LL_par[1] = storage_S_f_LL
+        storage_S_h_LL_par[1] = storage_S_h_LL
         for thread in 2:nthreads
             storage_L_par[thread] = Vector{T}(undef, L)
             storage_L2_par[thread] = similar(storage_L)
@@ -192,6 +235,14 @@ function DCModel(
             storage_L2L2_par[thread] = Matrix{T}(undef, L^2, L^2)
             storage_C_par[thread] = Matrix{T}(undef, L, L)
             storage_gradC_par[thread] = Vector{T}(undef, Int(L*(L+1)/2))
+            storage_grad_q_L_par[thread] = Vector{T}(undef, L)
+            storage_grad_q_LL_par[thread] = Vector{T}(undef, Int(L*(L+1)/2))
+            storage_grad_L_par[thread] = Vector{T}(undef, L)
+            storage_grad_LL_par[thread] = Vector{T}(undef, Int(L*(L+1)/2))
+            storage_S_f_L_par[thread] = Vector{T}(undef, L)
+            storage_S_h_L_par[thread] = Vector{T}(undef, L)
+            storage_S_f_LL_par[thread] = Vector{T}(undef, Int(L*(L+1)/2))
+            storage_S_h_LL_par[thread] = Vector{T}(undef, Int(L*(L+1)/2))
         end
         println("DCModel constructed for computation on $nthreads threads")
     end
@@ -202,7 +253,9 @@ function DCModel(
     storage_L, storage_L2, storage_L3, storage_L4, storage_LL, storage_LL2, storage_LL3, storage_LL4,
     storage_comm, storage_dup, storage_Lsqr, storage_Lsqr2, storage_L2L2, storage_C, storage_gradC,
     I_LL, storage_L_par, storage_L2_par, storage_L3_par, storage_L4_par, storage_LL_par, storage_LL2_par, storage_LL3_par, storage_LL4_par,
-    storage_comm_par, storage_dup_par, storage_Lsqr_par, storage_Lsqr2_par, storage_L2L2_par, storage_C_par, storage_gradC_par)
+    storage_comm_par, storage_dup_par, storage_Lsqr_par, storage_Lsqr2_par, storage_L2L2_par, storage_C_par, storage_gradC_par,
+    storage_grad_q_L, storage_grad_q_LL, storage_grad_L, storage_grad_LL, storage_S_f_L, storage_S_h_L, storage_S_f_LL, storage_S_h_LL, 
+    storage_grad_q_L_par, storage_grad_q_LL_par, storage_grad_L_par, storage_grad_LL_par, storage_S_f_L_par, storage_S_h_L_par, storage_S_f_LL_par, storage_S_h_LL_par)
 end
 
 # Function for sampling variational distribution
@@ -263,22 +316,23 @@ function sample_variational_distribution(
 end
 
 """
-    update_pi_star(Y, D, Z_sample, beta_sample, pi_sample, pi_star_old, 
-                    step, tol = 1e-6, maxiter = 100000, verbose = true)
+    update_pi_star(model, step = 1e-2, maxiter = 1e2, clip = 10, verbose = true)
 
 Find the parameters of the variational distribution of Z_i that maximize 
 the ELBO via gradient descent. The gradient is an expectation which is 
-appoximated from the inputs `Z_sample`, `beta_sample`, and `pi_sample` 
-which are sampled from the variational distribution. The same sample is 
-used for every gradient descent update for the sake of computational 
-efficiency. `pi_star_old` are the parameters that are updated in place.
+appoximated from the inputs `model.Z_sample`, `model.beta_sample`, and 
+`model.pi_sample` which are sampled from the variational distribution. 
+The same sample is used for every gradient descent update for the sake 
+of computational efficiency. `pi_star_old` are the parameters that are 
+updated in place. Gradient clipping clips the maximum gradient norm to 
+`clip` value.
 
 """
 function update_pi_star(
     model           :: DCModel;
     step            :: T = 1e-2,
-    tol             :: T = 1e-6,
-    maxiter         :: Int = 100000,
+    maxiter         :: Int = 1e2,
+    clip            :: T = 10.0,
     verbose         :: Bool = true
 ) where T <: AbstractFloat
     obs = model.obs
@@ -294,27 +348,40 @@ function update_pi_star(
         @inbounds for i in 1:N
             # Storage for gradient terms
             grad_log_q = model.storage_L2
+            grad_log_q_m = model.storage_grad_q_L
             grad_L = model.storage_L3
+            grad_L_m = model.storage_grad_L
             # Storage for intermediate term in gradient calculations
             D_beta = model.storage_L
-            rho_star_old_i = view(model.storage_LL3, 1:L)
+            rho_star_old_i = model.storage_L4
             # Get parameters for variational distribution of skill of i-th student
             pi_star_old_i = pi_star_old[i]
+            # Storage for intermediate terms in control variate calculation
+            S_f = model.storage_S_f_L
+            S_h = model.storage_S_h_L
             # Perform gradient descent update of i-th π*    
             @inbounds for iter in 1:maxiter
                 # Rho is unique up to a constant addative term
                 rho_star_old_i = log.(pi_star_old_i)
                 # Sample Z with updated π*
                 sample_variational_distribution(model, sample_Z = true, idx_Z = i)
-                # Set gradient of ELBO to 0
+                # Set gradients to 0
                 fill!(grad_L, 0)
+                fill!(grad_log_q, 0)
                 # Rao Blackwellized ELBO
                 ELBO = 0
+                # Control Variate terms
+                fill!(S_f, 0)
+                fill!(S_h, 0)
+                S_fh = 0
+                S_hh = 0
+                SS_fh = 0
+                SS_hh = 0
                 # Calculate the gradient estimate of the m-th sample
                 @inbounds for m in 1:M
                     z_im = Z_sample[i][m]
                     # Calculate gradient of log(q_1i(Z_i)) w.r.t. π*_i
-                    grad_log_q .= z_im .- pi_star_old_i
+                    grad_log_q_m .= z_im .- pi_star_old_i
                     # Calculate log(p(Y, Z_(i)))
                     log_prob_YZ = 0
                     for j in 1:J
@@ -325,9 +392,21 @@ function update_pi_star(
                     # Calculate log(q_1i(Z_i))
                     log_q = dot(z_im, log.(pi_star_old_i))
                     # Update average gradient
-                    grad_L .= (m - 1)/m .* grad_L + 1/m .* grad_log_q .* (log_prob_YZ - log_q)
+                    grad_L_m .= grad_log_q_m .* (log_prob_YZ - log_q)
+                    grad_L .= (m - 1)/m .* grad_L + 1/m .* grad_L_m
+                    # Update average variational gradient
+                    grad_log_q = (m - 1)/m .* grad_log_q + 1/m .* grad_log_q_m
                     # Update ELBO estimator
                     ELBO = (m-1)/m * ELBO + 1/m * (log_prob_YZ - log_q)
+                    # Update control variate terms
+                    fh = dot(grad_L_m, grad_log_q_m)
+                    hh = dot(grad_log_q_m, grad_log_q_m)
+                    S_fh += fh
+                    S_hh += hh
+                    SS_fh += dot(grad_L_m, S_h) + dot(grad_log_q_m, S_f) + fh
+                    SS_hh += 2 * dot(grad_log_q_m, S_h) + hh
+                    S_f .+= grad_L_m
+                    S_h .+= grad_log_q_m
                 end
                 # Print ELBO, parameter and gradient if verbose
                 if verbose
@@ -335,14 +414,25 @@ function update_pi_star(
                     println("π*_$i: $pi_star_old_i")
                     println("gradient: $grad_L")
                 end
+                # Stop condition when zero variance in grad_log_q to prevent divide by zero
+                if (S_hh - 1/M * SS_hh) == 0
+                    break # continue instead of break?
+                end
+                # Update gradient with control variate term and clipping
+                a_hat = (S_fh - 1/M * SS_fh) / (S_hh - 1/M * SS_hh)
+                grad_L .-= a_hat .* grad_log_q
+                grad_L_norm = dot(grad_L, grad_L)
+                if grad_L_norm > clip
+                    grad_L .= clip .* grad_L ./ grad_L_norm
+                end
                 # Update with one step
-                rho_star_old_i .+= step * grad_L
-                # Convert logits into probabilities
-                pi_star_old_i .= exp.(rho_star_old_i) ./ sum(exp.(rho_star_old_i))
-                # Stop condition
-                if abs2(norm(grad_L)) <= tol
+                rho_star_old_i .+= step .* grad_L
+                # Stop condition to prevent overflow
+                if maximum(abs.(rho_star_old_i)) > 1e2
                     break
                 end
+                # Convert logits into probabilities
+                pi_star_old_i .= exp.(rho_star_old_i) ./ sum(exp.(rho_star_old_i))
             end
         end
     else
@@ -350,28 +440,41 @@ function update_pi_star(
             # Get Thread Id
             tid = Threads.threadid()
             # Storage for gradient terms
-            grad_log_q = model.storage_L2_par[tid]
+            grad_log_q_m = model.storage_L2_par[tid]
+            grad_log_q = model.storage_grad_q_L_par[tid]
             grad_L = model.storage_L3_par[tid]
+            grad_L_m = model.storage_grad_L_par[tid]
             # Storage for intermediate term in gradient calculations
             D_beta = model.storage_L_par[tid]
-            rho_star_old_i = view(model.storage_LL3_par[tid], 1:L)
+            rho_star_old_i = model.storage_L4_par[tid]
             # Get parameters for variational distribution of skill of i-th student
             pi_star_old_i = pi_star_old[i]
+            # Storage for intermediate terms in control variate calculation
+            S_f = model.storage_S_f_L_par[tid]
+            S_h = model.storage_S_h_L_par[tid]
             # Perform gradient descent update of i-th π*    
             @inbounds for iter in 1:maxiter
                 # Rho is unique up to a constant addative term
                 rho_star_old_i = log.(pi_star_old_i)
                 # Sample Z with updated π*
                 sample_variational_distribution(model, sample_Z = true, idx_Z = i)
-                # Set gradient of ELBO to 0
+                # Set gradients to 0
                 fill!(grad_L, 0)
+                fill!(grad_log_q, 0)
                 # Rao Blackwellized ELBO
                 ELBO = 0
+                # Control Variate terms
+                fill!(S_f, 0)
+                fill!(S_h, 0)
+                S_fh = 0
+                S_hh = 0
+                SS_fh = 0
+                SS_hh = 0
                 # Calculate the gradient estimate of the m-th sample
                 @inbounds for m in 1:M
                     z_im = Z_sample[i][m]
                     # Calculate gradient of log(q_1i(Z_i)) w.r.t. π*_i
-                    grad_log_q .= z_im .- pi_star_old_i
+                    grad_log_q_m .= z_im .- pi_star_old_i
                     # Calculate log(p(Y, Z_(i)))
                     log_prob_YZ = 0
                     for j in 1:J
@@ -382,24 +485,41 @@ function update_pi_star(
                     # Calculate log(q_1i(Z_i))
                     log_q = dot(z_im, log.(pi_star_old_i))
                     # Update average gradient
-                    grad_L .= (m - 1)/m .* grad_L + 1/m .* grad_log_q .* (log_prob_YZ - log_q)
+                    grad_L_m .= grad_log_q_m .* (log_prob_YZ - log_q)
+                    grad_L .= (m - 1)/m .* grad_L + 1/m .* grad_L_m
+                    # Update average variational gradient
+                    grad_log_q = (m - 1)/m .* grad_log_q + 1/m .* grad_log_q_m
                     # Update ELBO estimator
                     ELBO = (m-1)/m * ELBO + 1/m * (log_prob_YZ - log_q)
+                    # Update control variate terms
+                    fh = dot(grad_L_m, grad_log_q_m)
+                    hh = dot(grad_log_q_m, grad_log_q_m)
+                    S_fh += fh
+                    S_hh += hh
+                    SS_fh += dot(grad_L_m, S_h) + dot(grad_log_q_m, S_f) + fh
+                    SS_hh += 2 * dot(grad_log_q_m, S_h) + hh
+                    S_f .+= grad_L_m
+                    S_h .+= grad_log_q_m
                 end
-                # Print ELBO, parameter and gradient if verbose
-                if verbose
-                    println("ELBO: $ELBO")
-                    println("π*_$i: $pi_star_old_i")
-                    println("gradient: $grad_L")
-                end
-                # Update with one step
-                rho_star_old_i .+= step * grad_L
-                # Convert logits into probabilities
-                pi_star_old_i .= exp.(rho_star_old_i) ./ sum(exp.(rho_star_old_i))
-                # Stop condition
-                if abs2(norm(grad_L)) <= tol
+                # Stop condition when zero variance in grad_log_q to prevent divide by zero
+                if (S_hh - 1/M * SS_hh) == 0
                     break
                 end
+                # Update gradient with control variate term and clipping
+                a_hat = (S_fh - 1/M * SS_fh) / (S_hh - 1/M * SS_hh)
+                grad_L .-= a_hat .* grad_log_q
+                grad_L_norm = dot(grad_L, grad_L)
+                if grad_L_norm > clip
+                    grad_L .= clip .* grad_L ./ grad_L_norm
+                end
+                # Update with one step
+                rho_star_old_i .+= step .* grad_L
+                # Stop condition to prevent overflow
+                if maximum(abs.(rho_star_old_i)) > 1e2
+                    continue
+                end
+                # Convert logits into probabilities
+                pi_star_old_i .= exp.(rho_star_old_i) ./ sum(exp.(rho_star_old_i))
             end
         end
     end
@@ -413,8 +533,8 @@ function update_mu_star_V_star(
     step_iterator=get_robbins_monroe_iterator(init_step, 20),
     # step_iterator_factory=get_robbins_monroe_iterator,
     use_iter    :: Bool=false,
-    tol         :: T=1e-6,
     maxiter     :: Int=100000,
+    clip        :: T=10.0,
     verbose     :: Bool=true
 ) where T <: AbstractFloat
     obs = model.obs
@@ -438,9 +558,12 @@ function update_mu_star_V_star(
             # (important for vectorized matricies to be strided if we want to use them for linear algebra)
             # Matricies are stored column major in Julia, so memory is assigned by column left to right
             grad_mu_L = view(model.storage_L, 1:len_beta)
+            grad_mu_L_m = view(model.storage_grad_L, 1:len_beta)
             grad_C_L = view(model.storage_LL2, 1:len_beta, 1:len_beta)
             vech_grad_C_L = view(grad_C_L, [len_beta * (j - 1) + i for j in 1:len_beta for i in j:len_beta]) # Uses same memory as grad_C_L
+            vech_grad_C_L_m = view(model.storage_grad_LL, 1:Int(len_beta*(len_beta + 1)/2))
             grad_mu_log_q = view(model.storage_L2, 1:len_beta)
+            grad_mu_log_q_m = view(model.storage_grad_q_L, 1:len_beta)
             vec_grad_V_log_q = view(model.storage_LL3, 1:len_beta^2)
             grad_V_log_q = reshape(vec_grad_V_log_q, len_beta, len_beta) # Uses same memory as vec_grad_V_log_q
             # Assign storage for calculating intermediate terms for gradient
@@ -453,6 +576,7 @@ function update_mu_star_V_star(
             storage_len_beta_sqr = view(model.storage_Lsqr, 1:len_beta^2)
             storage_len_beta_sqr2 = view(model.storage_Lsqr2, 1:len_beta^2)
             storage_gradC = view(model.storage_gradC, 1:Int(len_beta * (len_beta + 1) / 2))
+            storage_gradC_m = view(model.storage_grad_q_LL, 1:Int(len_beta * (len_beta + 1) / 2))
             # Generate commutation and duplication matrix
             comm_j = view(model.storage_comm, 1:len_beta^2, 1:len_beta^2)
             dup_j = view(model.storage_dup, 1:len_beta^2, 1:Int(len_beta * (len_beta + 1) / 2))
@@ -462,17 +586,19 @@ function update_mu_star_V_star(
             I_j = view(model.I_LL, 1:len_beta, 1:len_beta)
             # # Get step size iterator
             # step_iterator = step_iterator_factory(init_step)
-            # # Initialize variables for tracking previous values
-            # prev_ELBO = -Inf
-            # prev_mu = view(model.storage_L4, 1:len_beta)
-            # prev_V = view(model.storage_LL4, 1:len_beta, 1:len_beta)
-            # prev_mu .= mu_star_old[j]
-            # prev_V .= V_star_old[j]
+            # Storage for intermediate terms in control variate calculation
+            S_f_mu = view(model.storage_S_f_L, 1:len_beta)
+            S_h_mu = view(model.storage_S_h_L, 1:len_beta)
+            S_f_C = view(model.storage_S_f_LL, 1:Int(len_beta * (len_beta + 1) / 2))
+            S_h_C = view(model.storage_S_h_LL, 1:Int(len_beta * (len_beta + 1) / 2))
             @inbounds for iter in 1:maxiter
                 # Sample β from variational distribution
                 sample_variational_distribution(model, sample_β=true, idx_β=j)
+                # Set gradient to zero
                 fill!(grad_mu_L, 0)
                 fill!(grad_C_L, 0)
+                fill!(grad_mu_log_q, 0)
+                fill!(storage_gradC, 0)
                 # Copy V* into storage
                 copy!(Vinv_star_old_j, V_star_old_j)
                 # Perform cholesky decomposition on V*
@@ -493,17 +619,30 @@ function update_mu_star_V_star(
                 LAPACK.potri!('L', Vinv_star_old_j)
                 LinearAlgebra.copytri!(Vinv_star_old_j, 'L')
                 ELBO = 0
+                # Control Variate terms
+                fill!(S_f_mu, 0)
+                fill!(S_h_mu, 0)
+                S_fh_mu = 0
+                S_hh_mu = 0
+                SS_fh_mu = 0
+                SS_hh_mu = 0
+                fill!(S_f_C, 0)
+                fill!(S_h_C, 0)
+                S_fh_C = 0
+                S_hh_C = 0
+                SS_fh_C = 0
+                SS_hh_C = 0
                 # Calculate the gradient estimate of the m-th sample
                 @inbounds for m in 1:M
                     beta_jm = beta_sample[j][m]
-                    fill!(grad_mu_log_q, 0)
-                    # grad_mu_log_q = Vinv_star * β_jm
-                    BLAS.gemv!('N', T(1), Vinv_star_old_j, beta_jm, T(1), grad_mu_log_q)
-                    # grad_mu_log_q = Vinv_star_j * β_jm - Vinv_star_j * mu_star_j
-                    BLAS.gemv!('N', T(-1), Vinv_star_old_j, mu_star_old_j, T(1), grad_mu_log_q)
+                    fill!(grad_mu_log_q_m, 0)
+                    # grad_mu_log_q_m = Vinv_star * β_jm
+                    BLAS.gemv!('N', T(1), Vinv_star_old_j, beta_jm, T(1), grad_mu_log_q_m)
+                    # grad_mu_log_q_m = Vinv_star_j * β_jm - Vinv_star_j * mu_star_j
+                    BLAS.gemv!('N', T(-1), Vinv_star_old_j, mu_star_old_j, T(1), grad_mu_log_q_m)
                     # grad_V_log_q = -1/2(Vinv_star_j - Vinv_star_j * (β_jm - mu_star_j) * (β_jm - mu_star_j)^T * Vinv_star_j)
                     copy!(grad_V_log_q, Vinv_star_old_j)
-                    BLAS.gemm!('N', 'T', T(1 / 2), grad_mu_log_q, grad_mu_log_q, T(-1 / 2), grad_V_log_q)
+                    BLAS.gemm!('N', 'T', T(1 / 2), grad_mu_log_q_m, grad_mu_log_q_m, T(-1 / 2), grad_V_log_q)
                     # storage_kron_prod = I ⊗ C_j
                     collect!(storage_kron_prod, kronecker(I_j, C_star_old_j))
                     # storage_len_beta_sqr = (I ⊗ C_j)'vec(grad_V_log_q)
@@ -514,8 +653,8 @@ function update_mu_star_V_star(
                     BLAS.gemv!('T', T(1), storage_kron_prod, vec_grad_V_log_q, T(1), fill!(storage_len_beta_sqr2, 0))
                     # storage_len_beta_sqr2 = ((C_j ⊗ I)' + K'(I ⊗ C_j)')vec(grad_V_log_q)
                     BLAS.gemv!('T', T(1), comm_j, storage_len_beta_sqr, T(1), storage_len_beta_sqr2)
-                    # storage_gradC = D'((C_j ⊗ I)' + K'(I ⊗ C_j)')vec(grad_V_log_q)
-                    BLAS.gemv!('T', T(1), dup_j, storage_len_beta_sqr2, T(1), fill!(storage_gradC, 0))
+                    # storage_gradC_m = D'((C_j ⊗ I)' + K'(I ⊗ C_j)')vec(grad_V_log_q)
+                    BLAS.gemv!('T', T(1), dup_j, storage_len_beta_sqr2, T(1), fill!(storage_gradC_m, 0))
                     # Calculate log(p(Y, β_(j)))
                     log_prob_Ybeta = 0
                     for i in 1:N
@@ -526,47 +665,59 @@ function update_mu_star_V_star(
                     log_prob_Ybeta -= 1 / (2 * sigma2_sample[m]) * dot(beta_jm, beta_jm)
                     beta_minus_mu .= beta_jm
                     beta_minus_mu .-= mu_star_old_j
-                    log_q = -len_beta / 2 * log(2 * pi) - 1 / 2 * logdet_V_j - 1 / 2 * dot(beta_minus_mu, grad_mu_log_q)
+                    log_q = -len_beta / 2 * log(2 * pi) - 1 / 2 * logdet_V_j - 1 / 2 * dot(beta_minus_mu, grad_mu_log_q_m)
                     # Update average gradient
-                    grad_mu_L .= (m - 1) / m .* grad_mu_L + 1 / m .* grad_mu_log_q .* (log_prob_Ybeta - log_q)
-                    vech_grad_C_L .= (m - 1) / m .* vech_grad_C_L + 1 / m .* storage_gradC .* (log_prob_Ybeta - log_q)
+                    grad_mu_L_m .= grad_mu_log_q_m .* (log_prob_Ybeta - log_q)
+                    vech_grad_C_L_m .= storage_gradC_m .* (log_prob_Ybeta - log_q)
+                    grad_mu_L .= (m - 1) / m .* grad_mu_L + 1 / m .* grad_mu_L_m
+                    vech_grad_C_L .= (m - 1) / m .* vech_grad_C_L + 1 / m .* vech_grad_C_L_m
+                    # Update average variational gradient
+                    grad_mu_log_q .= (m - 1) / m .* grad_mu_log_q .+ 1 / m .* grad_mu_log_q_m
+                    storage_gradC .= (m - 1) / m .* storage_gradC .+ 1 / m .* storage_gradC_m
                     # Update ELBO estimator
                     ELBO = (m - 1) / m * ELBO + 1 / m * (log_prob_Ybeta - log_q)
+                    # Update control variate terms
+                    fh_mu = dot(grad_mu_L_m, grad_mu_log_q_m)
+                    hh_mu = dot(grad_mu_log_q_m, grad_mu_log_q_m)
+                    S_fh_mu += fh_mu
+                    S_hh_mu += hh_mu
+                    SS_fh_mu += dot(grad_mu_L_m, S_h_mu) + dot(grad_mu_log_q_m, S_f_mu) + fh_mu
+                    SS_hh_mu += 2 * dot(grad_mu_log_q_m, S_h_mu) + hh_mu
+                    S_f_mu .+= grad_mu_L_m
+                    S_h_mu .+= grad_mu_log_q_m
+                    fh_C = dot(vech_grad_C_L_m, storage_gradC_m)
+                    hh_C = dot(storage_gradC_m, storage_gradC_m)
+                    S_fh_C += fh_C
+                    S_hh_C += hh_C
+                    SS_fh_C += dot(vech_grad_C_L_m, S_h_C) + dot(storage_gradC_m, S_f_C) + fh_C
+                    SS_hh_C += 2 * dot(storage_gradC_m, S_h_C) + hh_C
+                    S_f_C .+= vech_grad_C_L_m
+                    S_h_C .+= storage_gradC_m
                 end
-                # Print ELBO, parameter and gradient if verbose
-                # if verbose
-                #     println("ELBO: $ELBO")
-                #     println("mu*_$j: $mu_star_old_j")
-                #     println("gradient mu: $grad_mu_L")
-                #     println("C*_$j: $C_star_old_j")
-                #     println("gradient C: $grad_C_L")
+               #Update gradient with control variate term and clipping
+                a_hat_mu = (S_fh_mu - 1/M * SS_fh_mu) / (S_hh_mu - 1/M * SS_hh_mu)
+                grad_mu_L .-= a_hat_mu .* grad_mu_log_q
+
+                a_hat_C = (S_fh_C - 1/M * SS_fh_C) / (S_hh_C - 1/M * SS_hh_C)
+                vech_grad_C_L .-= a_hat_C .* storage_gradC
+                
+                # grad_mu_L_norm = norm(grad_mu_L)
+                # if grad_mu_L_norm > clip * sqrt(len_beta)
+                #     grad_mu_L .= sqrt(len_beta) * clip .* grad_mu_L ./ grad_mu_L_norm
                 # end
-                # Stop condition TODO: update to more appropriate stop condition
-                # if abs2(norm(vech_C_star_old_j)) > 1e6
-                #     break
-                # end
-                # # If ELBO decreases, go to previous step
-                # if ELBO < prev_ELBO
-                #     mu_star_old_j .= prev_mu
-                #     V_star_old_j .= prev_V
-                # else
-                #     # Save current values
-                #     prev_mu .= mu_star_old_j
-                #     prev_V .= V_star_old_j
-                #     prev_ELBO = ELBO
-                #     # Update mu and C with one step
-                #     mu_star_old_j .+= step .* grad_mu_L
-                #     vech_C_star_old_j .+= step .* vech_grad_C_L
-                #     # Set V_star_old_j = C * C'
-                #     BLAS.gemm!('N', 'T', T(1), C_star_old_j, C_star_old_j, T(1), fill!(V_star_old_j, 0))
-                # end
+
+                vech_grad_C_L_norm = norm(vech_grad_C_L)
+                if vech_grad_C_L_norm > clip * sqrt(len_beta*(len_beta+1)/2)
+                    vech_grad_C_L .= sqrt(len_beta) * clip .* vech_grad_C_L ./ vech_grad_C_L_norm
+                end
+
                 # Update mu and C with one step
                 step = init_step
                 if use_iter
                     step = step_iterator()
                     println("Question $j: $step")
                 end
-                mu_star_old_j .+= step .* grad_mu_L ./ norm(grad_mu_L)
+                mu_star_old_j .+= step .* grad_mu_L #./ norm(grad_mu_L)
                 vech_C_star_old_j .+= step .* vech_grad_C_L #./ norm(vech_grad_C_L)
                 # Set V_star_old_j = C * C'
                 BLAS.gemm!('N', 'T', T(1), C_star_old_j, C_star_old_j, T(1), fill!(V_star_old_j, 0))
@@ -576,6 +727,8 @@ function update_mu_star_V_star(
         Threads.@threads for j in 1:J
             # Get thread id
             tid = Threads.threadid()
+            mu_star_old_j = mu_star_old[j]
+            V_star_old_j = V_star_old[j]
             # Perform gradient descent update of mu_j and V_j
             len_beta = length(beta_sample[j][1])
             # Assign storage for gradient terms
@@ -584,9 +737,12 @@ function update_mu_star_V_star(
             # (important for vectorized matricies to be strided if we want to use them for linear algebra)
             # Matricies are stored column major in Julia, so memory is assigned by column left to right
             grad_mu_L = view(model.storage_L_par[tid], 1:len_beta)
+            grad_mu_L_m = view(model.storage_grad_L_par[tid], 1:len_beta)
             grad_C_L = view(model.storage_LL2_par[tid], 1:len_beta, 1:len_beta)
             vech_grad_C_L = view(grad_C_L, [len_beta * (j - 1) + i for j in 1:len_beta for i in j:len_beta]) # Uses same memory as grad_C_L
+            vech_grad_C_L_m = view(model.storage_grad_LL_par[tid], 1:Int(len_beta*(len_beta + 1)/2))
             grad_mu_log_q = view(model.storage_L2_par[tid], 1:len_beta)
+            grad_mu_log_q_m = view(model.storage_grad_q_L_par[tid], 1:len_beta)
             vec_grad_V_log_q = view(model.storage_LL3_par[tid], 1:len_beta^2)
             grad_V_log_q = reshape(vec_grad_V_log_q, len_beta, len_beta) # Uses same memory as vec_grad_V_log_q
             # Assign storage for calculating intermediate terms for gradient
@@ -599,6 +755,7 @@ function update_mu_star_V_star(
             storage_len_beta_sqr = view(model.storage_Lsqr_par[tid], 1:len_beta^2)
             storage_len_beta_sqr2 = view(model.storage_Lsqr2_par[tid], 1:len_beta^2)
             storage_gradC = view(model.storage_gradC_par[tid], 1:Int(len_beta * (len_beta + 1) / 2))
+            storage_gradC_m = view(model.storage_grad_q_LL_par[tid], 1:Int(len_beta * (len_beta + 1) / 2))
             # Generate commutation and duplication matrix
             comm_j = view(model.storage_comm_par[tid], 1:len_beta^2, 1:len_beta^2)
             dup_j = view(model.storage_dup_par[tid], 1:len_beta^2, 1:Int(len_beta * (len_beta + 1) / 2))
@@ -606,21 +763,21 @@ function update_mu_star_V_star(
             get_dup!(dup_j, len_beta)
             # Assign len_beta by len_beta identity matrix
             I_j = view(model.I_LL, 1:len_beta, 1:len_beta)
-            # # Get step iterator
+            # # Get step size iterator
             # step_iterator = step_iterator_factory(init_step)
-            # # Initialize variables for tracking previous values
-            # prev_ELBO = -Inf
-            # prev_mu = view(model.storage_L4, 1:len_beta)
-            # prev_V = view(model.storage_LL4, 1:len_beta, 1:len_beta)
-            # prev_mu .= mu_star_old[j]
-            # prev_V .= V_star_old[j]
+            # Storage for intermediate terms in control variate calculation
+            S_f_mu = view(model.storage_S_f_L_par[tid], 1:len_beta)
+            S_h_mu = view(model.storage_S_h_L_par[tid], 1:len_beta)
+            S_f_C = view(model.storage_S_f_LL_par[tid], 1:Int(len_beta * (len_beta + 1) / 2))
+            S_h_C = view(model.storage_S_h_LL_par[tid], 1:Int(len_beta * (len_beta + 1) / 2))
             @inbounds for iter in 1:maxiter
                 # Sample β from variational distribution
                 sample_variational_distribution(model, sample_β=true, idx_β=j)
+                # Set gradient to zero
                 fill!(grad_mu_L, 0)
                 fill!(grad_C_L, 0)
-                mu_star_old_j = mu_star_old[j]
-                V_star_old_j = V_star_old[j]
+                fill!(grad_mu_log_q, 0)
+                fill!(storage_gradC, 0)
                 # Copy V* into storage
                 copy!(Vinv_star_old_j, V_star_old_j)
                 # Perform cholesky decomposition on V*
@@ -641,17 +798,30 @@ function update_mu_star_V_star(
                 LAPACK.potri!('L', Vinv_star_old_j)
                 LinearAlgebra.copytri!(Vinv_star_old_j, 'L')
                 ELBO = 0
+                # Control Variate terms
+                fill!(S_f_mu, 0)
+                fill!(S_h_mu, 0)
+                S_fh_mu = 0
+                S_hh_mu = 0
+                SS_fh_mu = 0
+                SS_hh_mu = 0
+                fill!(S_f_C, 0)
+                fill!(S_h_C, 0)
+                S_fh_C = 0
+                S_hh_C = 0
+                SS_fh_C = 0
+                SS_hh_C = 0
                 # Calculate the gradient estimate of the m-th sample
                 @inbounds for m in 1:M
                     beta_jm = beta_sample[j][m]
-                    fill!(grad_mu_log_q, 0)
-                    # grad_mu_log_q = Vinv_star * β_jm
-                    BLAS.gemv!('N', T(1), Vinv_star_old_j, beta_jm, T(1), grad_mu_log_q)
-                    # grad_mu_log_q = Vinv_star_j * β_jm - Vinv_star_j * mu_star_j
-                    BLAS.gemv!('N', T(-1), Vinv_star_old_j, mu_star_old_j, T(1), grad_mu_log_q)
+                    fill!(grad_mu_log_q_m, 0)
+                    # grad_mu_log_q_m = Vinv_star * β_jm
+                    BLAS.gemv!('N', T(1), Vinv_star_old_j, beta_jm, T(1), grad_mu_log_q_m)
+                    # grad_mu_log_q_m = Vinv_star_j * β_jm - Vinv_star_j * mu_star_j
+                    BLAS.gemv!('N', T(-1), Vinv_star_old_j, mu_star_old_j, T(1), grad_mu_log_q_m)
                     # grad_V_log_q = -1/2(Vinv_star_j - Vinv_star_j * (β_jm - mu_star_j) * (β_jm - mu_star_j)^T * Vinv_star_j)
                     copy!(grad_V_log_q, Vinv_star_old_j)
-                    BLAS.gemm!('N', 'T', T(1 / 2), grad_mu_log_q, grad_mu_log_q, T(-1 / 2), grad_V_log_q)
+                    BLAS.gemm!('N', 'T', T(1 / 2), grad_mu_log_q_m, grad_mu_log_q_m, T(-1 / 2), grad_V_log_q)
                     # storage_kron_prod = I ⊗ C_j
                     collect!(storage_kron_prod, kronecker(I_j, C_star_old_j))
                     # storage_len_beta_sqr = (I ⊗ C_j)'vec(grad_V_log_q)
@@ -662,8 +832,8 @@ function update_mu_star_V_star(
                     BLAS.gemv!('T', T(1), storage_kron_prod, vec_grad_V_log_q, T(1), fill!(storage_len_beta_sqr2, 0))
                     # storage_len_beta_sqr2 = ((C_j ⊗ I)' + K'(I ⊗ C_j)')vec(grad_V_log_q)
                     BLAS.gemv!('T', T(1), comm_j, storage_len_beta_sqr, T(1), storage_len_beta_sqr2)
-                    # storage_gradC = D'((C_j ⊗ I)' + K'(I ⊗ C_j)')vec(grad_V_log_q)
-                    BLAS.gemv!('T', T(1), dup_j, storage_len_beta_sqr2, T(1), fill!(storage_gradC, 0))
+                    # storage_gradC_m = D'((C_j ⊗ I)' + K'(I ⊗ C_j)')vec(grad_V_log_q)
+                    BLAS.gemv!('T', T(1), dup_j, storage_len_beta_sqr2, T(1), fill!(storage_gradC_m, 0))
                     # Calculate log(p(Y, β_(j)))
                     log_prob_Ybeta = 0
                     for i in 1:N
@@ -674,19 +844,60 @@ function update_mu_star_V_star(
                     log_prob_Ybeta -= 1 / (2 * sigma2_sample[m]) * dot(beta_jm, beta_jm)
                     beta_minus_mu .= beta_jm
                     beta_minus_mu .-= mu_star_old_j
-                    log_q = -len_beta / 2 * log(2 * pi) - 1 / 2 * logdet_V_j - 1 / 2 * dot(beta_minus_mu, grad_mu_log_q)
+                    log_q = -len_beta / 2 * log(2 * pi) - 1 / 2 * logdet_V_j - 1 / 2 * dot(beta_minus_mu, grad_mu_log_q_m)
                     # Update average gradient
-                    grad_mu_L .= (m - 1) / m .* grad_mu_L + 1 / m .* grad_mu_log_q .* (log_prob_Ybeta - log_q)
-                    vech_grad_C_L .= (m - 1) / m .* vech_grad_C_L + 1 / m .* storage_gradC .* (log_prob_Ybeta - log_q)
+                    grad_mu_L_m .= grad_mu_log_q_m .* (log_prob_Ybeta - log_q)
+                    vech_grad_C_L_m .= storage_gradC_m .* (log_prob_Ybeta - log_q)
+                    grad_mu_L .= (m - 1) / m .* grad_mu_L + 1 / m .* grad_mu_L_m
+                    vech_grad_C_L .= (m - 1) / m .* vech_grad_C_L + 1 / m .* vech_grad_C_L_m
+                    # Update average variational gradient
+                    grad_mu_log_q .= (m - 1) / m .* grad_mu_log_q .+ 1 / m .* grad_mu_log_q_m
+                    storage_gradC .= (m - 1) / m .* storage_gradC .+ 1 / m .* storage_gradC_m
                     # Update ELBO estimator
                     ELBO = (m - 1) / m * ELBO + 1 / m * (log_prob_Ybeta - log_q)
+                    # Update control variate terms
+                    fh_mu = dot(grad_mu_L_m, grad_mu_log_q_m)
+                    hh_mu = dot(grad_mu_log_q_m, grad_mu_log_q_m)
+                    S_fh_mu += fh_mu
+                    S_hh_mu += hh_mu
+                    SS_fh_mu += dot(grad_mu_L_m, S_h_mu) + dot(grad_mu_log_q_m, S_f_mu) + fh_mu
+                    SS_hh_mu += 2 * dot(grad_mu_log_q_m, S_h_mu) + hh_mu
+                    S_f_mu .+= grad_mu_L_m
+                    S_h_mu .+= grad_mu_log_q_m
+                    fh_C = dot(vech_grad_C_L_m, storage_gradC_m)
+                    hh_C = dot(storage_gradC_m, storage_gradC_m)
+                    S_fh_C += fh_C
+                    S_hh_C += hh_C
+                    SS_fh_C += dot(vech_grad_C_L_m, S_h_C) + dot(storage_gradC_m, S_f_C) + fh_C
+                    SS_hh_C += 2 * dot(storage_gradC_m, S_h_C) + hh_C
+                    S_f_C .+= vech_grad_C_L_m
+                    S_h_C .+= storage_gradC_m
                 end
+                #Update gradient with control variate term and clipping
+                a_hat_mu = (S_fh_mu - 1/M * SS_fh_mu) / (S_hh_mu - 1/M * SS_hh_mu)
+                grad_mu_L .-= a_hat_mu .* grad_mu_log_q
+
+                a_hat_C = (S_fh_C - 1/M * SS_fh_C) / (S_hh_C - 1/M * SS_hh_C)
+                vech_grad_C_L .-= a_hat_C .* storage_gradC
+                
+                # grad_mu_L_norm = norm(grad_mu_L)
+                # if grad_mu_L_norm > clip * sqrt(len_beta)
+                #     grad_mu_L .= sqrt(len_beta) * clip .* grad_mu_L ./ grad_mu_L_norm
+                # end
+
+                vech_grad_C_L_norm = norm(vech_grad_C_L)
+                if vech_grad_C_L_norm > clip * sqrt(len_beta*(len_beta+1)/2)
+                    vech_grad_C_L .= sqrt(len_beta) * clip .* vech_grad_C_L ./ vech_grad_C_L_norm
+                end
+
+                # Update mu and C with one step
                 step = init_step
                 if use_iter
                     step = step_iterator()
+                    println("Question $j: $step")
                 end
                 mu_star_old_j .+= step .* grad_mu_L #./ norm(grad_mu_L)
-                vech_C_star_old_j .+= step .* vech_grad_C_L ./ norm(vech_grad_C_L)
+                vech_C_star_old_j .+= step .* vech_grad_C_L #./ norm(vech_grad_C_L)
                 # Set V_star_old_j = C * C'
                 BLAS.gemm!('N', 'T', T(1), C_star_old_j, C_star_old_j, T(1), fill!(V_star_old_j, 0))
             end
@@ -700,6 +911,7 @@ function update_d_star(
     step            :: T,
     tol             :: T = 1e-6,
     maxiter         :: Int = 100000,
+    clip            :: T = 10.0,
     verbose         :: Bool = true
 ) where T <: AbstractFloat
     obs = model.obs
@@ -753,7 +965,10 @@ function update_d_star(
             println("d*: $d_star_old")
             println("gradient: $grad_L")
         end
-        # TODO: Stop condition
+        grad_L_norm = dot(grad_L, grad_L)
+        if grad_L_norm > clip
+            grad_L .= clip .* grad_L ./ grad_L_norm
+        end
 
         # Update d* with one step
         gamma_star_old .= log.(d_star_old)
@@ -768,6 +983,7 @@ function update_a_star_b_star(
     step            :: T,
     tol             :: T = 1e-6,
     maxiter         :: Int = 100000,
+    clip            :: T = 10.0,
     verbose         :: Bool = true
 ) where T <: AbstractFloat
     obs = model.obs
