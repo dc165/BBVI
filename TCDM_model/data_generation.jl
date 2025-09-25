@@ -13,7 +13,7 @@ function data_generation(
     N_student_per_school    :: Int;
     beta_interact           :: Bool=true
 ) where T <: AbstractFloat
-    D = generate_delta(Q)
+    D = generate_delta(Q, interact = beta_interact)
     N, O, J, K, L, S = N_school * N_student_per_school, N_time, size(Q, 1),  size(Q, 2), size(D[1], 1), N_school
     # Generate item response parameters
     beta_intercept_dist = Distributions.Uniform(-2, 0.5)
@@ -88,9 +88,9 @@ function data_generation(
             profile = 0
             for k in 1:K
                 transition_idx = 1
-                if time > 1
-                    for o in 1:(time - 1)
-                        transition_idx += skill_dict[argmax(Z_sample[i][o][m])][k] * 2^(o-1)
+                if t > 1
+                    for o in 1:(t - 1)
+                        transition_idx += skill_dict[argmax(pi_star[i][o])][k] * 2^(o-1)
                     end
                 end
                 skill_k_distribution = Distributions.Bernoulli(sigmoid(dot(mu_gamma_star[k][t][transition_idx][group[i]], X[k][t][i,:])))
@@ -100,15 +100,16 @@ function data_generation(
         end
     end
     # Generate item responses
-    Y = zeros(O, N, J)
+    Y = zeros(N, O, J)
     for t in 1:O
         for i in 1:N
             for j in 1:J
                 Y_tij_distribution = Distributions.Bernoulli(sigmoid(dot(D[j][argmax(pi_star[i][t]), :], mu_beta_star[j])))
-                Y[t, i, j] = rand(Y_tij_distribution)
+                Y[i, t, j] = rand(Y_tij_distribution)
             end
         end
     end
+    Y = Array{Int64, 3}(Y)
     return (Y = Y, X = X, U = U, group = group, Q = Q, mu_beta_star = mu_beta_star, pi_star = pi_star, 
             mu_gamma_star = mu_gamma_star, mu_omega_star = mu_omega_star, a_tau_star = a_tau_star, 
             b_tau_star = b_tau_star)

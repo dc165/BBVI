@@ -1529,7 +1529,12 @@ function update_normal_variational_distribution2(
                 BLAS.gemm!('N', 'T', T(1), V_star_old_j, V_star_old_j, T(1), fill!(grad_V_log_q, 0))
                 copy!(V_star_old_j, grad_V_log_q)
                 # Sample γ from variational distribution
-                sample_γ(model, s, t, k, z)
+                try
+                    sample_γ(model, s, t, k, z)
+                catch e
+                    println("$k, $t, $z, $s")
+                    rethrow(e)
+                end
                 # Control Variate terms
                 fill!(S_f_mu, 0)
                 fill!(S_h_mu, 0)

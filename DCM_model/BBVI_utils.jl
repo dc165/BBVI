@@ -21,7 +21,7 @@ end
 
 function generate_delta(
     Q           :: Matrix{Int};
-    interacts   :: Bool=true
+    interact   :: Bool=true
 )
     J, K, L = size(Q, 1), size(Q, 2), 2^size(Q, 2)
     D = Matrix{Int64}[]
@@ -32,7 +32,7 @@ function generate_delta(
         num_masteries = sum(Q[j, :])
         features = generate_features(Q[j,:])
         num_features = num_masteries
-        if interacts
+        if interact
             num_features = 2^num_masteries
         end
         d = zeros(L, num_features)
