@@ -162,27 +162,15 @@ function TDCModel(
         mu_gamma_star[k] = Vector{Vector{Vector{Vector{T}}}}(undef, O)
         V_gamma_star[k] = Vector{Vector{Vector{Matrix{T}}}}(undef, O)
         for t in 1:O
-            if t == 1
-                mu_gamma_star[k][t] = Vector{Vector{Vector{T}}}(undef, 1)
-                V_gamma_star[k][t] = Vector{Vector{Matrix{T}}}(undef, 1)
-
-                mu_gamma_star[k][t][1] = Vector{Vector{T}}(undef, S)
-                V_gamma_star[k][t][1] = Vector{Matrix{T}}(undef, S)
+            mu_gamma_star[k][t] = Vector{Vector{Vector{T}}}(undef, 2^(t - 1))
+            V_gamma_star[k][t] = Vector{Vector{Matrix{T}}}(undef, 2^(t - 1))
+            num_features = size(obs.X[k][t], 2)
+            for z in 1:(2^(t - 1))
+                mu_gamma_star[k][t][z] = Vector{Vector{T}}(undef, S)
+                V_gamma_star[k][t][z] = Vector{Matrix{T}}(undef, S)
                 for s in 1:S
-                    mu_gamma_star[k][t][1][s] = zeros(1)
-                    V_gamma_star[k][t][1][s] = ones(1, 1)
-                end
-            else
-                mu_gamma_star[k][t] = Vector{Vector{Vector{T}}}(undef, 2^(t - 1))
-                V_gamma_star[k][t] = Vector{Vector{Matrix{T}}}(undef, 2^(t - 1))
-                num_features = size(obs.X[k][t], 2)
-                for z in 1:(2^(t - 1))
-                    mu_gamma_star[k][t][z] = Vector{Vector{T}}(undef, S)
-                    V_gamma_star[k][t][z] = Vector{Matrix{T}}(undef, S)
-                    for s in 1:S
-                        mu_gamma_star[k][t][z][s] = zeros(num_features)
-                        V_gamma_star[k][t][z][s] = Matrix(1.0I, num_features, num_features)
-                    end
+                    mu_gamma_star[k][t][z][s] = zeros(num_features)
+                    V_gamma_star[k][t][z][s] = Matrix(1.0I, num_features, num_features)
                 end
             end
         end
@@ -199,34 +187,18 @@ function TDCModel(
         for t in 1:O
             num_features_gamma = size(obs.X[k][t], 2)
             num_features_omega = size(obs.U[k][t], 2)
-            if t == 1
-                mu_omega_star[k][t] = Vector{Vector{Vector{T}}}(undef, 1)
-                mu_omega_star[k][t][1] = Vector{Vector{T}}(undef, 1)
-                mu_omega_star[k][t][1][1] = zeros(num_features_omega)
-
-                V_omega_star[k][t] = Vector{Vector{Matrix{T}}}(undef, 1)
-                V_omega_star[k][t][1] = Vector{Matrix{T}}(undef, 1)
-                V_omega_star[k][t][1][1] = Matrix{T}(1.0I, num_features_omega, num_features_omega)
-
-                a_tau_star[k][t] = Vector{Vector{T}}(undef, 1)
-                a_tau_star[k][t][1] = ones(1) .* S / 2
-
-                b_tau_star[k][t] = Vector{Vector{T}}(undef, 1)
-                b_tau_star[k][t][1] = ones(1)
-            else
-                mu_omega_star[k][t] = Vector{Vector{Vector{T}}}(undef, 2^(t-1))
-                V_omega_star[k][t] = Vector{Vector{Matrix{T}}}(undef, 2^(t-1))
-                a_tau_star[k][t] = Vector{Vector{T}}(undef, 2^(t-1))
-                b_tau_star[k][t] = Vector{Vector{T}}(undef, 2^(t-1))
-                for z in 1:(2^(t-1))
-                    mu_omega_star[k][t][z] = Vector{Vector{T}}(undef, num_features_gamma)
-                    V_omega_star[k][t][z] = Vector{Matrix{T}}(undef, num_features_gamma)
-                    a_tau_star[k][t][z] = ones(num_features_gamma) .* S / 2
-                    b_tau_star[k][t][z] = ones(num_features_gamma) .* 1
-                    for m in 1:num_features_gamma
-                        mu_omega_star[k][t][z][m] = zeros(num_features_omega)
-                        V_omega_star[k][t][z][m] = Matrix(1.0I, num_features_omega, num_features_omega)
-                    end
+            mu_omega_star[k][t] = Vector{Vector{Vector{T}}}(undef, 2^(t-1))
+            V_omega_star[k][t] = Vector{Vector{Matrix{T}}}(undef, 2^(t-1))
+            a_tau_star[k][t] = Vector{Vector{T}}(undef, 2^(t-1))
+            b_tau_star[k][t] = Vector{Vector{T}}(undef, 2^(t-1))
+            for z in 1:(2^(t-1))
+                mu_omega_star[k][t][z] = Vector{Vector{T}}(undef, num_features_gamma)
+                V_omega_star[k][t][z] = Vector{Matrix{T}}(undef, num_features_gamma)
+                a_tau_star[k][t][z] = ones(num_features_gamma) .* S / 2
+                b_tau_star[k][t][z] = ones(num_features_gamma) .* 1
+                for m in 1:num_features_gamma
+                    mu_omega_star[k][t][z][m] = zeros(num_features_omega)
+                    V_omega_star[k][t][z][m] = Matrix(1.0I, num_features_omega, num_features_omega)
                 end
             end
         end
