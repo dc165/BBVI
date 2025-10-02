@@ -1948,10 +1948,10 @@ function update_normal_variational_distribution3(
         Threads.@threads for idx in collect(Iterators.flatten(Iterators.product(1:K, t, 1:(2^(t-1))) for t in 1:O))
             k, t, z = idx[1], idx[2], idx[3]
             num_features = size(obs.X[k][t], 2)
-            for feature in 1:num_features
-                # Get thread id
-                tid = Threads.threadid()
+            # Get thread id
+            tid = Threads.threadid()
 
+            for feature in 1:num_features
                 mu_star_old_j = mu_star_old[k][t][z][feature]
                 V_star_old_j = V_star_old[k][t][z][feature]
                 # Perform gradient descent update of mu_j and V_j

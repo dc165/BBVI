@@ -84,7 +84,7 @@ function data_generation(
         pi_star[i] = Vector{Vector{T}}(undef, O)
         for t in 1:O
             # probability vector of possible mastery partern over time for k-th attribute
-            pi_star[i][t] = ones(2^K) ./ 2^K
+            pi_star[i][t] = zeros(2^K) ./ 2^K
             profile = 0
             for k in 1:K
                 transition_idx = 1
