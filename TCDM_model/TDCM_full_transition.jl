@@ -448,20 +448,43 @@ end
 
 function sample_β(
     model           :: TDCModel;
-    idx_question    :: Int = -1
+    idx_question    :: Int = -1,
+    damp            :: AbstractFloat=1e-8
 )
     obs = model.obs
     J = size(obs.Y, 3)
     if idx_question == -1
         for j in 1:J
             # Create variational distribution from model parameters for each β_j
-            beta_j_variational_distribution = MvNormal(model.mu_beta_star[j], model.V_beta_star[j])
+            beta_j_variational_distribution = nothing
+            try
+                beta_j_variational_distribution = MvNormal(model.mu_beta_star[j], model.V_beta_star[j])
+            catch e
+                for l in 1:length(model.mu_beta_star[j])
+                    model.V_beta_star[j][l,l] += damp
+                end
+                beta_j_variational_distribution = MvNormal(model.mu_beta_star[j], model.V_beta_star[j])
+                for l in 1:length(model.mu_beta_star[j])
+                    model.V_beta_star[j][l,l] -= damp
+                end
+            end
             # Populate preallocated arrays with samples from variational distribution
             rand!(beta_j_variational_distribution, model.beta_sample[j])
         end
     else
         # Create variational distribution from model parameters for specific β_j
-        beta_j_variational_distribution = MvNormal(model.mu_beta_star[idx_question], model.V_beta_star[idx_question])
+        beta_j_variational_distribution = nothing
+        try
+            beta_j_variational_distribution = MvNormal(model.mu_beta_star[idx_question], model.V_beta_star[idx_question])
+        catch e
+            for l in 1:length(model.mu_beta_star[idx_question])
+                model.V_beta_star[idx_question][l,l] += damp
+            end
+            beta_j_variational_distribution = MvNormal(model.mu_beta_star[idx_question], model.V_beta_star[idx_question])
+            for l in 1:length(model.mu_beta_star[idx_question])
+                model.V_beta_star[idx_question][l,l] -= damp
+            end
+        end
         # Populate preallocated arrays with samples from variational distribution
         rand!(beta_j_variational_distribution, model.beta_sample[idx_question])
     end
@@ -472,11 +495,24 @@ function sample_γ(
     idx_group       :: Int,
     idx_time        :: Int,
     idx_skill       :: Int,
-    idx_transition  :: Int
+    idx_transition  :: Int;
+    damp            :: AbstractFloat=1e-8
 )
     # Create variational distribution from model parameters for γ
-    gamma_stkz_variational_distribution = MvNormal(model.mu_gamma_star[idx_skill][idx_time][idx_transition][idx_group],
-                                            model.V_gamma_star[idx_skill][idx_time][idx_transition][idx_group])
+    gamma_stkz_variational_distribution = nothing
+    try
+        gamma_stkz_variational_distribution = MvNormal(model.mu_gamma_star[idx_skill][idx_time][idx_transition][idx_group],
+                                                model.V_gamma_star[idx_skill][idx_time][idx_transition][idx_group])
+    catch e
+        for l in 1:length(model.mu_gamma_star[idx_skill][idx_time][idx_transition][idx_group])
+            model.V_gamma_star[idx_skill][idx_time][idx_transition][idx_group][l,l] += damp
+        end
+        gamma_stkz_variational_distribution = MvNormal(model.mu_gamma_star[idx_skill][idx_time][idx_transition][idx_group],
+                                                model.V_gamma_star[idx_skill][idx_time][idx_transition][idx_group])
+        for l in 1:length(model.mu_gamma_star[idx_skill][idx_time][idx_transition][idx_group])
+            model.V_gamma_star[idx_skill][idx_time][idx_transition][idx_group][l,l] -= damp
+        end
+    end
     # Populate preallocated arrays with samples from variational distribution
     rand!(gamma_stkz_variational_distribution, model.gamma_sample[idx_skill][idx_time][idx_transition][idx_group])
 end
@@ -486,11 +522,24 @@ function sample_ω(
     idx_skill       :: Int,
     idx_time        :: Int,
     idx_transition  :: Int,
-    idx_feature     :: Int
+    idx_feature     :: Int;
+    damp            :: AbstractFloat=1e-8
 )
+    omega_ktzm_variational_distribution = nothing
     # Create variational distribution from model parameters for ω
-    omega_ktzm_variational_distribution = MvNormal(model.mu_omega_star[idx_skill][idx_time][idx_transition][idx_feature],
-                                            model.V_omega_star[idx_skill][idx_time][idx_transition][idx_feature])
+    try
+        omega_ktzm_variational_distribution = MvNormal(model.mu_omega_star[idx_skill][idx_time][idx_transition][idx_feature],
+                                                model.V_omega_star[idx_skill][idx_time][idx_transition][idx_feature])
+    catch e
+        for l in 1:length(model.mu_omega_star[idx_skill][idx_time][idx_transition][idx_feature])
+            model.V_omega_star[idx_skill][idx_time][idx_transition][idx_feature][l,l] += damp
+        end
+        omega_ktzm_variational_distribution = MvNormal(model.mu_omega_star[idx_skill][idx_time][idx_transition][idx_feature],
+                                                model.V_omega_star[idx_skill][idx_time][idx_transition][idx_feature])
+        for l in 1:length(model.mu_omega_star[idx_skill][idx_time][idx_transition][idx_feature])
+            model.V_omega_star[idx_skill][idx_time][idx_transition][idx_feature][l,l] -= damp
+        end                                        
+    end
     # Populate preallocated arrays with samples from variational distribution
     rand!(omega_ktzm_variational_distribution, model.omega_sample[idx_skill][idx_time][idx_transition][idx_feature])
 end
@@ -963,7 +1012,7 @@ function update_normal_variational_distribution(
                 end
                 # Undo log transform of diagonal
                 for k in 1:len_beta
-                    C_star_old_j[k,k] = max(exp(C_star_old_j[k, k]), 1e-7)
+                    C_star_old_j[k,k] = exp(C_star_old_j[k, k])
                 end
                 # Set V_star_old_j = C
                 copy!(V_star_old_j, C_star_old_j)
@@ -1186,7 +1235,7 @@ function update_normal_variational_distribution(
                 end
                 # Undo log transform of diagonal
                 for k in 1:len_beta
-                    C_star_old_j[k,k] = max(exp(C_star_old_j[k, k]), 1e-7)
+                    C_star_old_j[k,k] = exp(C_star_old_j[k, k])
                 end
                 # Set V_star_old_j = C
                 copy!(V_star_old_j, C_star_old_j)
@@ -1443,7 +1492,7 @@ function update_normal_variational_distribution2(
                             end
                             # Undo log transform of diagonal
                             for j in 1:len_gamma
-                                C_star_old_j[j,j] = max(exp(C_star_old_j[j, j]), 1e-7)
+                                C_star_old_j[j,j] = exp(C_star_old_j[j, j])
                             end
                             # Set V_star_old_j = C
                             copy!(V_star_old_j, C_star_old_j)
@@ -1683,7 +1732,7 @@ function update_normal_variational_distribution2(
                 end
                 # Undo log transform of diagonal
                 for j in 1:len_gamma
-                    C_star_old_j[j,j] = max(exp(C_star_old_j[j, j]), 1e-7)
+                    C_star_old_j[j,j] = exp(C_star_old_j[j, j])
                 end
                 # Set V_star_old_j = C
                 copy!(V_star_old_j, C_star_old_j)
@@ -1932,7 +1981,7 @@ function update_normal_variational_distribution3(
                     end
                     # Undo log transform of diagonal
                     for j in 1:len_omega
-                        C_star_old_j[j,j] = max(exp(C_star_old_j[j, j]), 1e-7)
+                        C_star_old_j[j,j] = exp(C_star_old_j[j, j])
                     end
                     # Set V_star_old_j = C
                     copy!(V_star_old_j, C_star_old_j)
@@ -2163,7 +2212,7 @@ function update_normal_variational_distribution3(
                     end
                     # Undo log transform of diagonal
                     for j in 1:len_omega
-                        C_star_old_j[j,j] = max(exp(C_star_old_j[j, j]), 1e-7)
+                        C_star_old_j[j,j] = exp(C_star_old_j[j, j])
                     end
                     # Set V_star_old_j = C
                     copy!(V_star_old_j, C_star_old_j)
