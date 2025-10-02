@@ -963,7 +963,7 @@ function update_normal_variational_distribution(
                 end
                 # Undo log transform of diagonal
                 for k in 1:len_beta
-                    C_star_old_j[k,k] = exp(C_star_old_j[k, k])
+                    C_star_old_j[k,k] = max(exp(C_star_old_j[k, k]), 1e-7)
                 end
                 # Set V_star_old_j = C
                 copy!(V_star_old_j, C_star_old_j)
@@ -1186,7 +1186,7 @@ function update_normal_variational_distribution(
                 end
                 # Undo log transform of diagonal
                 for k in 1:len_beta
-                    C_star_old_j[k,k] = exp(C_star_old_j[k, k])
+                    C_star_old_j[k,k] = max(exp(C_star_old_j[k, k]), 1e-7)
                 end
                 # Set V_star_old_j = C
                 copy!(V_star_old_j, C_star_old_j)
@@ -1443,7 +1443,7 @@ function update_normal_variational_distribution2(
                             end
                             # Undo log transform of diagonal
                             for j in 1:len_gamma
-                                C_star_old_j[j,j] = exp(C_star_old_j[j, j])
+                                C_star_old_j[j,j] = max(exp(C_star_old_j[j, j]), 1e-7)
                             end
                             # Set V_star_old_j = C
                             copy!(V_star_old_j, C_star_old_j)
@@ -1529,12 +1529,7 @@ function update_normal_variational_distribution2(
                 BLAS.gemm!('N', 'T', T(1), V_star_old_j, V_star_old_j, T(1), fill!(grad_V_log_q, 0))
                 copy!(V_star_old_j, grad_V_log_q)
                 # Sample γ from variational distribution
-                try
-                    sample_γ(model, s, t, k, z)
-                catch e
-                    println("$k, $t, $z, $s")
-                    rethrow(e)
-                end
+                sample_γ(model, s, t, k, z)
                 # Control Variate terms
                 fill!(S_f_mu, 0)
                 fill!(S_h_mu, 0)
@@ -1688,7 +1683,7 @@ function update_normal_variational_distribution2(
                 end
                 # Undo log transform of diagonal
                 for j in 1:len_gamma
-                    C_star_old_j[j,j] = exp(C_star_old_j[j, j])
+                    C_star_old_j[j,j] = max(exp(C_star_old_j[j, j]), 1e-7)
                 end
                 # Set V_star_old_j = C
                 copy!(V_star_old_j, C_star_old_j)
@@ -1937,7 +1932,7 @@ function update_normal_variational_distribution3(
                     end
                     # Undo log transform of diagonal
                     for j in 1:len_omega
-                        C_star_old_j[j,j] = exp(C_star_old_j[j, j])
+                        C_star_old_j[j,j] = max(exp(C_star_old_j[j, j]), 1e-7)
                     end
                     # Set V_star_old_j = C
                     copy!(V_star_old_j, C_star_old_j)
@@ -2168,7 +2163,7 @@ function update_normal_variational_distribution3(
                     end
                     # Undo log transform of diagonal
                     for j in 1:len_omega
-                        C_star_old_j[j,j] = exp(C_star_old_j[j, j])
+                        C_star_old_j[j,j] = max(exp(C_star_old_j[j, j]), 1e-7)
                     end
                     # Set V_star_old_j = C
                     copy!(V_star_old_j, C_star_old_j)
