@@ -17,7 +17,7 @@ function data_generation(
     N, O, J, K, L, S = N_school * N_student_per_school, N_time, size(Q, 1),  size(Q, 2), size(D[1], 1), N_school
     # Generate item response parameters
     beta_intercept_dist = Distributions.Uniform(-2, 0.5)
-    beta_feature_dist = Distributions.Normal(2, 1)
+    beta_feature_dist = Distributions.Normal(2, 0.5)
     mu_beta_star = Vector{Vector{T}}(undef, J)
     for j in 1:J
         num_features = size(D[j], 2)
