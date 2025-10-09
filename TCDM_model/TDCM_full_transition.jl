@@ -1066,7 +1066,7 @@ function update_normal_variational_distribution(
             S_h_mu = view(model.storage_S_h_L_par[tid], 1:len_beta)
             S_f_C = view(model.storage_S_f_LL_par[tid], 1:Int(len_beta * (len_beta + 1) / 2))
             S_h_C = view(model.storage_S_h_LL_par[tid], 1:Int(len_beta * (len_beta + 1) / 2))
-            @inbounds for iter in 1:maxiter
+            for iter in 1:maxiter
                 # Set gradient to zero
                 fill!(grad_mu_L, 0)
                 fill!(grad_C_L, 0)
@@ -1106,7 +1106,7 @@ function update_normal_variational_distribution(
                 SS_fh_C = 0
                 SS_hh_C = 0
                 # Calculate the gradient estimate of the m-th sample
-                @inbounds for m in 1:M
+                for m in 1:M
                     beta_jm = beta_sample[j][m]
                     fill!(grad_mu_log_q_m, 0)
                     # grad_mu_log_q_m = Vinv_star * β_jm

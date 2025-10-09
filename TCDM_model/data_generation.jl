@@ -16,8 +16,8 @@ function data_generation(
     D = generate_delta(Q, interact = beta_interact)
     N, O, J, K, L, S = N_school * N_student_per_school, N_time, size(Q, 1),  size(Q, 2), size(D[1], 1), N_school
     # Generate item response parameters
-    beta_intercept_dist = Distributions.Uniform(-2, 0.5)
-    beta_feature_dist = Distributions.Normal(2, 0.5)
+    beta_intercept_dist = Distributions.Uniform(-2, 0.2)
+    beta_feature_dist = Distributions.Normal(3, 0.5)
     mu_beta_star = Vector{Vector{T}}(undef, J)
     for j in 1:J
         num_features = size(D[j], 2)
@@ -26,7 +26,7 @@ function data_generation(
         mu_beta_star[j][1] = rand(beta_intercept_dist)
     end
     # Generate group level parameters
-    omega_feature_dist = Distributions.Normal(0, 1.5)
+    omega_feature_dist = Distributions.Normal(0, 0.3)
     mu_omega_star = Vector{Vector{Vector{Vector{Vector{T}}}}}(undef, K)
     a_tau_star = Vector{Vector{Vector{Vector{T}}}}(undef, K)
     b_tau_star = Vector{Vector{Vector{Vector{T}}}}(undef, K)
@@ -47,6 +47,7 @@ function data_generation(
                 for m in 1:num_features_gamma
                     mu_omega_star[k][t][z][m] = Vector{T}(undef, num_features_omega)
                     rand!(omega_feature_dist, mu_omega_star[k][t][z][m])
+                    mu_omega_star[k][t][z][m] .+= [(-1)^(g - 1) + 2 for g in 1:num_features_omega]
                 end
             end
         end
@@ -113,4 +114,68 @@ function data_generation(
     return (Y = Y, X = X, U = U, group = group, Q = Q, mu_beta_star = mu_beta_star, pi_star = pi_star, 
             mu_gamma_star = mu_gamma_star, mu_omega_star = mu_omega_star, a_tau_star = a_tau_star, 
             b_tau_star = b_tau_star)
+end
+
+function data_generation2(
+    Q                       :: Matrix{Int},
+    num_features_X          :: Int,
+    num_features_U          :: Int,
+    N_time                  :: Int,
+    N_skill                 :: Int,
+    N_school                :: Int,
+    N_student_per_school    :: Int;
+    beta_interact           :: Bool=true
+) where T <: AbstractFloat
+    D = generate_delta(Q, interact = beta_interact)
+    N, O, J, K, L, S = N_school * N_student_per_school, N_time, size(Q, 1),  size(Q, 2), size(D[1], 1), N_school
+    # Generate item response parameters
+    beta_intercept_dist = Distributions.Uniform(-2, 0.2)
+    beta_feature_dist = Distributions.Normal(3, 0.5)
+    mu_beta_star = Vector{Vector{T}}(undef, J)
+    for j in 1:J
+        num_features = size(D[j], 2)
+        mu_beta_star[j] = zeros(num_features)
+        rand!(beta_feature_dist, mu_beta_star[j])
+        mu_beta_star[j][1] = rand(beta_intercept_dist)
+    end
+
+    pi_star = Vector{Vector{Vector{T}}}(undef, N)
+    for i in 1:N
+        pi_star[i] = Vector{Vector{T}}(undef, O)
+        for t in 1:O
+            # probability vector of possible mastery partern over time for k-th attribute
+            pi_star[i][t] = zeros(2^K)
+        end
+    end
+
+    rand_skills = Array{Int64, 3}(undef, N, K, O)
+    rand!(Distributions.Bernoulli(0.5), rand_skills)
+    for i in 1:N
+        for t in 1:O
+            idx = 0
+            for k in 1:K
+                idx += 2^(k - 1) * rand_skills[i, t, k]
+            end
+            data.pi_star[i][t][idx + 1] = 1
+        end
+    end
+
+    # Generate individual level transition parameters
+    mu_gamma_star = Vector{Vector{Vector{Vector{Vector{T}}}}}(undef, K)
+    for k in 1:K
+        mu_gamma_star[k] = Vector{Vector{Vector{Vector{T}}}}(undef, O)
+        for t in 1:O
+            num_features = size(X[k][t], 2)
+            mu_gamma_star[k][t] = Vector{Vector{Vector{T}}}(undef, 2^(t - 1))
+            for z in 1:(2^(t - 1))
+                mu_gamma_star[k][t][z] = Vector{Vector{T}}(undef, S)
+                for s in 1:S
+                    mu_gamma_star[k][t][z][s] = Vector{T}(undef, num_features)
+                    for feature in 1:num_features
+                        XTX = inv(X * X')
+                    end
+                end
+            end
+        end
+    end
 end
