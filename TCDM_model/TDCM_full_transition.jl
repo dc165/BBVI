@@ -796,6 +796,9 @@ function update_normal_variational_distribution(
     mu_star_old, V_star_old = model.mu_beta_star, model.V_beta_star
     N, J, L, O = size(Y, 1), size(Y, 3), size(D[1], 1), size(obs.Y, 2)
     M = model.M
+
+    elbo_tracker = Vector{T}(undef, maxiter)
+
     # Fully update parameters of each β_j using noisy gradients before moving to update parameters of next β_j
     if !model.enable_parallel
         @inbounds for j in 1:J
@@ -1239,9 +1242,15 @@ function update_normal_variational_distribution(
                 end
                 # Set V_star_old_j = C
                 copy!(V_star_old_j, C_star_old_j)
+
+                if j == 1
+                    elbo_tracker[iter] = ELBO
+                end
+
             end
         end
     end
+    elbo_tracker
 end
 
 function update_normal_variational_distribution2(
