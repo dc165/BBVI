@@ -575,6 +575,9 @@ function update_categorical_variational_distribution(
     # Number of students, time points, questions, skills, attribute profiles, groups
     N, O, J, K, L, S = size(obs.Y, 1), size(obs.Y, 2), size(obs.Y, 3),  size(obs.Q, 2), size(obs.D[1], 1), size(obs.U[1][1], 1)
     M = model.M
+
+    res = zeros(N, 3, maxiter)
+
     # Fully update parameters of each Z_i using noisy gradients before moving to update parameters of next Z_i
     if !model.enable_parallel
         @inbounds for i in 1:N
@@ -596,7 +599,7 @@ function update_categorical_variational_distribution(
             # Perform gradient descent update of i-th π*    
             @inbounds for iter in 1:maxiter
                 # Rho is unique up to a constant addative term
-                rho_star_old_i = log.(pi_star_old_i)
+                rho_star_old_i .= log.(pi_star_old_i)
                 # Sample Z with updated π*
                 sample_Z(model, i, time)
                 # Set gradients to 0
@@ -622,6 +625,7 @@ function update_categorical_variational_distribution(
                         mul!(D_beta, D[j], beta_sample[j][m])
                         log_prob_YZ += dot(z_im, log.(sigmoid.((2*Y[i, time, j] - 1) .* D_beta)))
                     end
+
                     skill_profile = obs.skill_dict[argmax(z_im)]
                     for k in 1:K
                         transition_idx = 1
@@ -638,6 +642,7 @@ function update_categorical_variational_distribution(
 
                     # Calculate log(q_1i(Z_i))
                     log_q = dot(z_im, log.(pi_star_old_i))
+
                     # Update average gradient
                     grad_L_m .= grad_log_q_m .* (log_prob_YZ - log_q)
                     grad_L .= (m - 1)/m .* grad_L + 1/m .* grad_L_m
@@ -700,7 +705,7 @@ function update_categorical_variational_distribution(
             # Perform gradient descent update of i-th π*    
             @inbounds for iter in 1:maxiter
                 # Rho is unique up to a constant addative term
-                rho_star_old_i = log.(pi_star_old_i)
+                rho_star_old_i .= log.(pi_star_old_i)
                 # Sample Z with updated π*
                 sample_Z(model, i, time)
                 # Set gradients to 0
@@ -726,6 +731,10 @@ function update_categorical_variational_distribution(
                         mul!(D_beta, D[j], beta_sample[j][m])
                         log_prob_YZ += dot(z_im, log.(sigmoid.((2*Y[i, time, j] - 1) .* D_beta)))
                     end
+
+                    log_prob_YZ_1 = log_prob_YZ
+                    res[i, 1, iter] = (m-1)/m * res[i, 1, iter] + 1/m * log_prob_YZ_1
+
                     skill_profile = obs.skill_dict[argmax(z_im)]
                     for k in 1:K
                         transition_idx = 1
@@ -739,6 +748,13 @@ function update_categorical_variational_distribution(
                         log_prob_YZ += log(sigmoid((2*skill_profile[k] - 1) * 
                                     dot(gamma_sample[k][time][transition_idx][group_i][m], obs_X)))
                     end
+
+                    res[i, 2, iter] = (m-1)/m * res[i, 2, iter] + 1/m * (log_prob_YZ - log_prob_YZ_1)
+
+                    # Calculate log(q_1i(Z_i))
+                    log_q = dot(z_im, log.(pi_star_old_i))
+
+                    res[i, 3, iter] = (m-1)/m * res[i, 3, iter] + 1/m * log_q
 
                     # Calculate log(q_1i(Z_i))
                     log_q = dot(z_im, log.(pi_star_old_i))
@@ -774,9 +790,15 @@ function update_categorical_variational_distribution(
                 end
                 # Convert logits into probabilities
                 pi_star_old_i .= exp.(rho_star_old_i) ./ sum(exp.(rho_star_old_i))
+                
+                # Normalize 1-norm to 1 for numerical stability
+                pi_star_old_i ./= sum(pi_star_old_i)
             end
         end
     end
+
+    return res
+
 end
 
 function update_normal_variational_distribution(
@@ -797,7 +819,7 @@ function update_normal_variational_distribution(
     N, J, L, O = size(Y, 1), size(Y, 3), size(D[1], 1), size(obs.Y, 2)
     M = model.M
 
-    elbo_tracker = Vector{T}(undef, maxiter)
+    elbo_tracker = Array{T,3}(undef, J, 6, maxiter)
 
     # Fully update parameters of each β_j using noisy gradients before moving to update parameters of next β_j
     if !model.enable_parallel
@@ -1138,13 +1160,22 @@ function update_normal_variational_distribution(
                             log_prob_Ybeta += log(sigmoid((2 * Y[i, t, j] - 1) * dot(D[j][argmax(Z_sample[i][t][m]), :], beta_jm)))
                         end
                     end
+
+                    elbo_tracker[j,1,iter] = (m-1) / m * elbo_tracker[j,1,iter] + 1 / m * log_prob_Ybeta
+                    
                     beta_minus_mu .= beta_jm
                     beta_minus_mu .-= model.mu_beta_prior[j]
                     mul!(L_beta_minus_mu, model.L_beta_prior[j], beta_minus_mu)
                     log_prob_Ybeta -= 1/2 * dot(L_beta_minus_mu, L_beta_minus_mu)
+
+                    elbo_tracker[j,2,iter] = (m-1) / m * elbo_tracker[j,2,iter] + 1 / m * -1/2 * dot(L_beta_minus_mu, L_beta_minus_mu)
+
                     beta_minus_mu .= beta_jm
                     beta_minus_mu .-= mu_star_old_j
                     log_q = -len_beta / 2 * log(2 * pi) - 1 / 2 * logdet_V_j - 1 / 2 * dot(beta_minus_mu, grad_mu_log_q)
+
+                    elbo_tracker[j,3,iter] = (m-1) / m * elbo_tracker[j,3,iter] + 1 / m * log_q
+
                     # Update average gradient
                     grad_mu_L_m .= grad_mu_log_q_m .* (log_prob_Ybeta - log_q)
                     vech_grad_C_L_m .= storage_gradC_m .* (log_prob_Ybeta - log_q)
@@ -1155,6 +1186,7 @@ function update_normal_variational_distribution(
                     storage_gradC .= (m - 1) / m .* storage_gradC .+ 1 / m .* storage_gradC_m
                     # Update ELBO estimator
                     ELBO = (m - 1) / m * ELBO + 1 / m * (log_prob_Ybeta - log_q)
+                    
                     # Update control variate terms
                     fh_mu = dot(grad_mu_L_m, grad_mu_log_q_m)
                     hh_mu = dot(grad_mu_log_q_m, grad_mu_log_q_m)
@@ -1219,6 +1251,9 @@ function update_normal_variational_distribution(
                     v_t_mu .= ADAMparams.b2 .* v_t_mu .+ (1 - ADAMparams.b2) .* grad_mu_L .^2
                     v_t_V .= ADAMparams.b2 .* v_t_V .+ (1 - ADAMparams.b2) .* vech_grad_C_L .^2
                     mu_star_old_j .+= step .* sqrt(1 - b2_t) / (1 - b1_t) .* m_t_mu ./ (sqrt.(v_t_mu) .+ ADAMparams.eps)
+
+                    elbo_tracker[j, 4, iter] = norm(step .* sqrt(1 - b2_t) / (1 - b1_t) .* m_t_mu ./ (sqrt.(v_t_mu) .+ ADAMparams.eps))
+
                     # Gradient clipping
                     vech_grad_C_L .= sqrt(1 - b2_t) / (1 - b1_t) .* m_t_V ./ (sqrt.(v_t_V) .+ ADAMparams.eps)
                     vech_grad_C_L_norm = norm(vech_grad_C_L)
@@ -1227,6 +1262,10 @@ function update_normal_variational_distribution(
                     end
 
                     vech_C_star_old_j .+= step .* vech_grad_C_L
+
+                    elbo_tracker[j, 5, iter] = norm(vech_grad_C_L)
+                    elbo_tracker[j, 6, iter] = norm(vech_C_star_old_j)
+
                 else
                     # SGD update
                     vech_grad_C_L_norm = norm(vech_grad_C_L)
@@ -1242,15 +1281,10 @@ function update_normal_variational_distribution(
                 end
                 # Set V_star_old_j = C
                 copy!(V_star_old_j, C_star_old_j)
-
-                if j == 1
-                    elbo_tracker[iter] = ELBO
-                end
-
             end
         end
     end
-    elbo_tracker
+    return elbo_tracker
 end
 
 function update_normal_variational_distribution2(

@@ -16,14 +16,15 @@ function data_generation(
     D = generate_delta(Q, interact = beta_interact)
     N, O, J, K, L, S = N_school * N_student_per_school, N_time, size(Q, 1),  size(Q, 2), size(D[1], 1), N_school
     # Generate item response parameters
-    beta_intercept_dist = Distributions.Uniform(-2, 0.2)
+    beta_intercept_dist = Distributions.Normal(-2, 0.1)
     mu_beta_star = Vector{Vector{T}}(undef, J)
     for j in 1:J
         num_features = size(D[j], 2)
         mu_beta_star[j] = zeros(num_features)
         mu_beta_star[j][1] = rand(beta_intercept_dist)
         if num_features > 1
-            mu_beta_star[j][2:num_features] .= rand(Distributions.Normal(8/num_features, 0.2), num_features - 1)
+            mu_beta_star[j][2:num_features] .= rand(Distributions.Normal(4/num_features, 0.1), num_features - 1)
+            mu_beta_star[j][num_features] += rand(Distributions.Normal(2, 0.1))
         end
     end
     # Generate group level parameters
@@ -48,7 +49,7 @@ function data_generation(
                 for m in 1:num_features_gamma
                     mu_omega_star[k][t][z][m] = Vector{T}(undef, num_features_omega)
                     rand!(omega_feature_dist, mu_omega_star[k][t][z][m])
-                    mu_omega_star[k][t][z][m] .+= [(-1)^(g - 1) + 1 for g in 1:num_features_omega]
+                    mu_omega_star[k][t][z][m] .+= [(-1)^(g - 1) for g in 1:num_features_omega]
                 end
             end
         end
