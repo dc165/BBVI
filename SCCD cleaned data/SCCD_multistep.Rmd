@@ -1,0 +1,718 @@
+---
+title: "SCCD Multistep modelling"
+output: html_document
+date: "2026-03-10"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(bayestestR)
+library(dplyr)
+library(tidyr)
+library(patchwork)
+```
+
+```{r}
+source("utils.R")
+source("utils_MCMC.R")
+source("TDCM_MCMC_empirical.R")
+# load("TDCM_empirical_three_level_response.RData")
+# data3L = data
+```
+
+```{r}
+load("TDCM_empirical_data.RData")
+data2L = data
+```
+
+```{r}
+Q_matrix= data2L$Q_matrix
+Y = data2L$Y
+group = data2L$group
+X_group = data2L$X_group
+X_ind = data2L$X_ind
+J = dim(Q_matrix)[1] # the number of questions: 25
+K = dim(Q_matrix)[2] # the number of skills: 5
+N = dim(Y)[1] # the number of respondents: 987
+indT = dim(Y)[2] # the number of time points: 2
+G = max(group) # the number of groups: 52
+p = dim(X_group[[1]][[1]])[2]  # number of group covariates
+m = dim(X_ind[[1]][[2]])[2]  # number of individual covariates (including intercepts)
+
+## remove individual covariates
+for (k in seq(K)){
+  X_ind[[k]][[2]] <- X_ind[[k]][[2]][,1, drop = FALSE] # keep only the intercept
+}
+
+## remove group covariates
+for (k in seq(K)){
+  for (i in seq(2)){
+     X_group[[k]][[i]] <- X_group[[k]][[i]][,1, drop = FALSE] # keep only the intercept
+  }
+}
+
+empirical_data3L = list('Y' = Y, 
+                      'X_group' = X_group, 
+                      'X_ind' = X_ind, 
+                      'group' = group, 
+                      'Q' = Q_matrix, 
+                      'K' = K,
+                      'indT' = indT
+                      )
+
+
+MCMC_result_empirical_1_2 = MCMC_Ind_fit(empirical_data2L, M = 1000, priors=list(beta_prior = 2.5, sigma_omega = 5, v_prior = 2), beta_interact = FALSE, two_way_only = TRUE)
+
+saveRDS(MCMC_result_empirical_1_2, file = "MCMC_result_empirical_1_2.rds")
+```
+
+```{r}
+MCMC_result_empirical_1_2 = readRDS("MCMC_result_empirical_1_2.rds")
+MCMC_result_empirical_1 = readRDS("MCMC_result_empirical_1.rds")
+```
+
+
+```{r}
+beta_plot = function(MCMC_result_empirical){
+  
+  beta_estimate = MCMC_result_empirical$E_beta
+
+  intercept = vector(length = J)
+  main_effect = vector(length = J)
+  for (j in seq(J)){
+    intercept[j] = beta_estimate[[j]][1]
+    main_effect[j] = beta_estimate[[j]][2]
+  }
+  
+  
+  # Combine into long format for ggplot
+  J <- length(intercept)  # Define J explicitly
+  beta_estimate <- data.frame(
+    index = rep(seq_len(J), 2),
+    value = c(intercept, main_effect),
+    type = rep(c("Intercept", "Main Effect"), each = J)
+  )
+  
+  # Plot
+  p1 <- ggplot(data = beta_estimate, aes(x = index, y = value, fill = type, shape = type)) +
+    geom_point(size = 2.5, color = "white") +
+    xlab("Parameter Index (beta)") +
+    ylab("Estimate") +
+    labs(title = " Estimated value of Beta") +
+    scale_fill_manual(values = c("Intercept" = "palevioletred2", "Main Effect" = "lightseagreen")) +
+    scale_shape_manual(values = c("Intercept" = 21, "Main Effect" = 24)) +
+    theme_minimal()
+  p1
+}
+```
+
+```{r}
+J = 25
+beta_plot(MCMC_result_empirical_1)
+```
+```{r}
+load("TDCM_empirical_data.RData")
+
+Q_matrix= data$Q_matrix
+Y = data$Y
+group = data$group
+X_group = data$X_group
+X_ind = data$X_ind
+J = dim(Q_matrix)[1] # the number of questions: 25
+K = dim(Q_matrix)[2] # the number of skills: 5
+N = dim(Y)[1] # the number of respondents: 987
+indT = dim(Y)[2] # the number of time points: 2
+G = max(group) # the number of groups: 52
+p = dim(X_group[[1]][[1]])[2]  # number of group covariates
+m = dim(X_ind[[1]][[2]])[2]  # number of individual covariates (including intercepts)
+
+
+## remove group covariates
+for (k in seq(K)){
+  for (i in seq(2)){
+     X_group[[k]][[i]] <- X_group[[k]][[i]][,1, drop = FALSE] # keep only the intercept
+  }
+}
+
+empirical_data = list('Y' = Y, 
+                      'X_group' = X_group, 
+                      'X_ind' = X_ind, 
+                      'group' = group, 
+                      'Q' = Q_matrix, 
+                      'K' = K,
+                      'indT' = indT
+                      )
+
+# MCMC_result_empirical = MCMC_Ind_fit(empirical_data, M = 1000, priors=list(beta_prior = 1, sigma_omega = 2.5, v_prior = 1), beta_interact = FALSE, two_way_only = TRUE)
+
+MCMC_result_empirical_3 = MCMC_Ind_fit(empirical_data, M = 1000, priors=list(beta_prior = 2.5, sigma_omega = 5, v_prior = 2), beta_interact = FALSE, two_way_only = TRUE)
+
+saveRDS(MCMC_result_empirical_3, file = "MCMC_result_empirical_3.rds")
+
+```
+
+```{r}
+MCMC_result_empirical_3 = readRDS("MCMC_result_empirical_3.rds")
+```
+
+
+```{r}
+significant_gamma = matrix(nrow = 0, ncol = 16)
+for(k in 1:K) {
+  for(z in 1:2) {
+    for(s in 1:52) {
+      # sig_ind = (abs(colMeans(MCMC_result_empirical_3$E_gamma_trace[[k]][[2]][,z,s,-1])) - 1.28 * apply(MCMC_result_empirical_3$E_gamma_trace[[k]][[2]][,z,s,-1], 2, sd)) > 0
+      sig_ind = apply(MCMC_result_empirical_3$E_gamma_trace[[k]][[2]][,z,s,-1], 2, function(x){prod(hdi(x, 0.8))}) > 0
+      significant_gamma = rbind(significant_gamma, c(k, z, sig_ind))
+    }
+  }
+}
+significant_gamma = as.data.frame(significant_gamma)
+colnames(significant_gamma) = c("attribute", "forward", "Q2A", "Q2B", "Q17B", "GENDER", "LUNCH_STATUS", "ELL_STATUS", "SPED_STATUS", "P2", "P3A", "P3C", "P6", "P7F", "FAST_ATTEND_RATE", "FASTWORKS_ATTEND_TOTAL")
+```
+
+```{r}
+significant_gamma = significant_gamma %>%
+  group_by(attribute, forward) %>%
+  summarise(across(everything(), sum))
+significant_gamma
+```
+```{r}
+s1t2_f_SEPD = as.data.frame(MCMC_result_empirical_3$E_gamma_trace[[1]][[2]][,1,,8]) %>%
+  pivot_longer(cols = everything(), names_to = "School", values_to = "Coefficient")
+s1t2_f_SEPD$School = as.factor(substr(s1t2_f_SEPD$School, 2, 4))
+
+plot = ggplot(s1t2_f_SEPD, aes(x = School, y = Coefficient)) +
+  geom_violin(scale = "width", color = "transparent", fill = "turquoise") +
+  theme_bw() +
+  labs(title = "Effect of special education status on acquiring attribute 1") +
+  scale_x_discrete(labels = NULL)
+ggsave("plots/s1t2_f_SPED.pdf", plot, width = 8, height = 4)
+plot
+```
+
+
+
+```{r}
+s2t2_f_SEPD = as.data.frame(MCMC_result_empirical_3$E_gamma_trace[[2]][[2]][,1,,8]) %>%
+  pivot_longer(cols = everything(), names_to = "School", values_to = "Coefficient")
+s2t2_f_SEPD$School = as.factor(substr(s2t2_f_SEPD$School, 2, 4))
+
+plot = ggplot(s2t2_f_SEPD, aes(x = School, y = Coefficient)) +
+  geom_violin(scale = "width", color = "transparent", fill = "turquoise3") +
+  theme_bw() +
+  labs(title = "Effect of special education status on acquiring attribute 2") +
+  scale_x_discrete(labels = NULL)
+ggsave("plots/s2t2_f_SPED.pdf", plot, width = 8, height = 4)
+plot
+```
+```{r}
+s3t2_f_SEPD = as.data.frame(MCMC_result_empirical_3$E_gamma_trace[[3]][[2]][,1,,8]) %>%
+  pivot_longer(cols = everything(), names_to = "School", values_to = "Coefficient")
+s3t2_f_SEPD$School = as.factor(substr(s3t2_f_SEPD$School, 2, 4))
+
+plot = ggplot(s3t2_f_SEPD, aes(x = School, y = Coefficient)) +
+  geom_violin(scale = "width", color = "transparent", fill = "turquoise4") +
+  theme_bw() +
+  labs(title = "Effect of special education status on acquiring attribute 2") +
+  scale_x_discrete(labels = NULL)
+ggsave("plots/s3t2_f_SPED.pdf", plot, width = 8, height = 4)
+plot
+```
+
+
+
+```{r}
+s4t2_f_SEPD = as.data.frame(MCMC_result_empirical_3$E_gamma_trace[[4]][[2]][,1,,8]) %>%
+  pivot_longer(cols = everything(), names_to = "School", values_to = "Coefficient")
+s4t2_f_SEPD$School = as.factor(substr(s4t2_f_SEPD$School, 2, 4))
+
+plot = ggplot(s4t2_f_SEPD, aes(x = School, y = Coefficient)) +
+  geom_violin(scale = "width", color = "transparent", fill = "seagreen") +
+  theme_bw() +
+  labs(title = "Effect of special education status on acquiring attribute 2") +
+  scale_x_discrete(labels = NULL)
+ggsave("plots/s4t2_f_SPED.pdf", plot, width = 8, height = 4)
+plot
+```
+```{r}
+s4t2_b_SEPD = as.data.frame(MCMC_result_empirical_3$E_gamma_trace[[4]][[2]][,2,,8]) %>%
+  pivot_longer(cols = everything(), names_to = "School", values_to = "Coefficient")
+s4t2_b_SEPD$School = as.factor(substr(s4t2_b_SEPD$School, 2, 4))
+
+plot = ggplot(s4t2_b_SEPD, aes(x = School, y = Coefficient)) +
+  geom_violin(scale = "width", color = "transparent", fill = "seagreen") +
+  theme_bw() +
+  labs(title = "Effect of special education status on maintaining attribute 2") +
+  scale_x_discrete(labels = NULL)
+ggsave("plots/s4t2_b_SPED.pdf", plot, width = 8, height = 4)
+plot
+```
+
+
+```{r}
+s3t2_b_P7F = as.data.frame(MCMC_result_empirical_3$E_gamma_trace[[5]][[2]][,1,,4]) %>%
+  pivot_longer(cols = everything(), names_to = "School", values_to = "Coefficient")
+
+ggplot(s3t2_b_P7F, aes(x = School, y = Coefficient, fill = School)) +
+  geom_violin(trim = FALSE) +               # Create the violin shapes
+  geom_boxplot(width = 0.1, aes(fill = School), outlier.shape = NA) + # Optional: add a tiny boxplot inside
+  theme_minimal() +                         # Clean background
+  labs(title = "Hierarchical effect of group level covariates on \nindividual level impact of FASTWORK attendance for \nskill 2 forward transition") +
+  scale_fill_brewer(palette = "Pastel1")
+```
+```{r}
+s1t2_b_LUNCH = as.data.frame(MCMC_result_empirical_3$E_gamma_trace[[1]][[2]][,2,,6]) %>%
+  pivot_longer(cols = everything(), names_to = "School", values_to = "Coefficient")
+s1t2_b_LUNCH$School = as.factor(substr(s1t2_b_LUNCH$School, 2, 4))
+
+plot = ggplot(s1t2_b_LUNCH, aes(x = School, y = Coefficient)) +
+  geom_violin(scale = "width", color = "transparent", fill = "seagreen") +
+  theme_bw() +
+  labs(title = "Effect of free or reduced price lunch status on maintaining attribute 1") +
+  scale_x_discrete(labels = NULL)
+plot
+```
+
+
+
+
+```{r}
+MCMC_result_empirical_2 = readRDS("MCMC_result_empirical_2.rds")
+```
+
+```{r}
+significant_omega = matrix(nrow = 0, ncol = 6)
+for(k in 1:K) {
+  for(z in 1:2) {
+    # sig_ind = (abs(colMeans(MCMC_result_empirical_2$E_omega_trace[[k]][[2]][,z,-1])) - 1.28 * apply(MCMC_result_empirical_2$E_omega_trace[[k]][[2]][,z,-1], 2, sd)) > 0
+    sig_ind = apply(MCMC_result_empirical_2$E_omega_trace[[k]][[2]][,z,-1], 2, function(x){prod(hdi(x, 0.7))}) > 0
+    significant_omega = rbind(significant_omega, c(k, z, sig_ind))
+  }
+}
+significant_omega = as.data.frame(significant_omega)
+colnames(significant_omega) = c("attribute", "forward", "FAST_avg", "FASTWORKS_AVG_ATTEND", "P_RE_HISP", "PHOENIX")
+```
+
+```{r}
+significant_omega %>%
+  group_by(attribute, forward) %>%
+  summarise(across(everything(), sum))
+```
+
+
+```{r}
+load("C:/Users/Dan Chen/OneDrive/Desktop/BBVI/SCCD cleaned data/TDCM_empirical_sig.RData")
+Q_matrix= data$Q_matrix
+Y = data$Y
+group = data$group
+X_group = data$X_group
+X_ind = data$X_ind
+J = dim(Q_matrix)[1] # the number of questions: 25
+K = dim(Q_matrix)[2] # the number of skills: 5
+N = dim(Y)[1] # the number of respondents: 987
+indT = dim(Y)[2] # the number of time points: 2
+G = max(group) # the number of groups: 52
+p = dim(X_group[[1]][[1]])[2]  # number of group covariates
+m = dim(X_ind[[1]][[2]])[2]  # number of individual covariates (including intercepts)
+
+empirical_data = list('Y' = Y, 
+                      'X_group' = X_group, 
+                      'X_ind' = X_ind, 
+                      'group' = group, 
+                      'Q' = Q_matrix, 
+                      'K' = K,
+                      'indT' = indT
+                      )
+
+MCMC_result_empirical = MCMC_Ind_fit(empirical_data, M = 2000, priors=list(beta_prior = 1, sigma_omega = 2.5, v_prior = 1), beta_interact = FALSE, two_way_only = TRUE)
+
+
+saveRDS(MCMC_result_empirical, file = "MCMC_result_empirical_4.rds")
+```
+```{r}
+MCMC_result_empirical_4 = readRDS("MCMC_result_empirical_4.rds")
+```
+
+```{r}
+k = 1
+z = 1
+
+group_ind_interact = as.data.frame(MCMC_result_empirical_4$E_omega_trace[[k]][[2]][,z,4,-1]) 
+colnames(group_ind_interact) = c("FAST_avg", "FASTWORKS_AVG_ATTEND", "P_RE_HISP", "PHOENIX")
+group_ind_interact = group_ind_interact %>%
+  pivot_longer(cols = everything(), names_to = "Individual variable", values_to = "Coefficient")
+   
+```
+
+
+```{r}
+ggplot(group_ind_interact, aes(x = `Individual variable`, y = Coefficient)) + 
+  geom_violin() +
+  theme_bw()
+```
+
+```{r}
+sig_omega_gamma = matrix(ncol = 7)
+for(k in 1:K) {
+  for(z in 1:2) {
+    for(g in 1:6) {
+      sig_ind = apply(MCMC_result_empirical_4$E_omega_trace[[k]][[2]][,z,g,-1], 2, function(x){prod(hdi(x, 0.80))}) >= 0
+      sig_omega_gamma = rbind(sig_omega_gamma, c(k, z, g, sig_ind))
+    }
+  }
+}
+
+sig_omega_gamma = as.data.frame(sig_omega_gamma)
+colnames(sig_omega_gamma) = c("attribute", "forward", "Ind_var", "FAST_avg", "FASTWORKS_AVG_ATTEND", "P_RE_HISP", "PHOENIX")
+
+sig_omega_gamma %>%
+  group_by(attribute, Ind_var) %>%
+  summarise(across(everything(), sum))
+```
+
+## Interactions identified at 90% credible interval
+
+Hyperactivity (1), Special Education status (5), Hispanic population level (4)
+Emotional (2), Special Education status (5), FASTWORKS (3) and Hispanic population level (4)
+Conduct (3), Special Education status (5), FASTWORK (3)
+Peer (4), English Language Learner (4), Hispanic population level (4)
+Prosocial (5), English Language Learner (4), Hispanic population level (4)
+
+```{r}
+k = 2
+z = 1
+
+school_diffs = matrix(rep(0, 52 * 52), ncol = 52)
+for(x in 1:52) {
+  for(y in 1:52) {
+    school_x = MCMC_result_empirical_4$E_gamma_trace[[k]][[2]][,z,x,5]
+    school_y = MCMC_result_empirical_4$E_gamma_trace[[k]][[2]][,z,y,5]
+    school_diffs[x, y] = prod(hdi(school_x - school_y, 0.90)) > 0
+  }
+}
+
+heatmap(school_diffs, symm = TRUE)
+```
+```{r}
+x = 24
+y = 35
+school_x = MCMC_result_empirical_4$E_gamma_trace[[k]][[2]][,z,x,5]
+school_y = MCMC_result_empirical_4$E_gamma_trace[[k]][[2]][,z,y,5]
+hist(school_x - school_y, breaks = 30)
+```
+
+```{r}
+plot_interaction = function(model, data, attribute, ind_covariate, main) {
+  k = attribute
+  g = ind_covariate
+  
+  data_interaction = cbind(data$X_group[[k]][[2]][,"FASTWORKS_AVG_ATTEND"], colMeans(model$E_gamma_trace[[k]][[2]][,1,,g]))
+  data_interaction = as.data.frame(rbind(data_interaction, cbind(data$X_group[[k]][[2]][,"FASTWORKS_AVG_ATTEND"], colMeans(model$E_gamma_trace[[k]][[2]][,2,,g]))))
+  colnames(data_interaction) = c("FASTWORK average attendance", "transition coefficient")
+  #data_interaction$location = rep(ifelse(data$X_group[[k]][[2]][,"PHOENIX"] == 1, "San Antonio", "Phoenix"), 2)
+  data_interaction$`Hispanic population level` = as.factor(data$X_group[[k]][[2]][,"P_RE_HISP"])
+  data_interaction$transition = rep(c("01", "11"), each = 52)
+  ggplot(data_interaction, aes(x = `FASTWORK average attendance`, y = `transition coefficient`, col = `Hispanic population level`)) +
+    geom_point(alpha = 0.5) +
+    facet_wrap(~transition) +
+    theme_bw() +
+    ggtitle(main)
+}
+```
+
+
+
+
+```{r}
+k1_sped = plot_interaction(MCMC_result_empirical_4, data, 1, 5, "Hyperactivity")
+k1_sped
+```
+```{r}
+k2_sped = plot_interaction(MCMC_result_empirical_4, data, 2, 5, "Emotional")
+k2_sped
+```
+```{r}
+k3_sped = plot_interaction(MCMC_result_empirical_4, data, 3, 5, "Conduct")
+k3_sped
+```
+```{r}
+k4_ell = plot_interaction(MCMC_result_empirical_4, data, 4, 4, "Peer")
+k4_ell
+```
+```{r}
+k5_ell = plot_interaction(MCMC_result_empirical_4, data, 5, 4, "Prosocial")
+k5_ell
+```
+## Interactions identified at 80% credible interval
+
+Emotional (2), English frequency (2), FASTWORK (3)
+Emotional (2), Free or reduced price lunch (3), Hispanic population level (4)
+Prosocial (5), Parents attend events (6), FASTWORK (3)
+
+```{r}
+plot_interaction(MCMC_result_empirical_4, data, 2, 2, "Mean transition coefficients of english speaking frequency \nfor Emotional attribute")
+ggsave("plots/english_emotional.pdf", width = 8, height = 6)
+```
+```{r}
+plot_interaction(MCMC_result_empirical_4, data, 2, 3, "Mean transition coefficients of free or reduced price lunch status \nfor Emotional attribute")
+ggsave("plots/reduce_price_emotional.pdf", width = 8, height = 6)
+```
+```{r}
+plot_interaction(MCMC_result_empirical_4, data, 5, 6, "Mean transition coefficients of parental participation in school activities \nfor Prosocial attribute")
+ggsave("plots/parent_pprosocial.pdf", width = 8, height = 6)
+```
+
+## Direct effects of group level covariate
+```{r}
+k1_intercept = plot_interaction(MCMC_result_empirical_4, data, 1, 1, "Hyperactivity")
+```
+
+```{r}
+k2_intercept = plot_interaction(MCMC_result_empirical_4, data, 2, 1, "Emotional")
+```
+
+```{r}
+k3_intercept = plot_interaction(MCMC_result_empirical_4, data, 3, 1, "Conduct")
+```
+
+```{r}
+k4_intercept = plot_interaction(MCMC_result_empirical_4, data, 4, 1, "Peer")
+```
+
+```{r}
+k5_intercept = plot_interaction(MCMC_result_empirical_4, data, 5, 1, "Prosocial")
+```
+
+
+
+
+```{r}
+k = 4
+g = 1
+
+data_FASTWORK_and_LUNCH = cbind(data$X_group[[k]][[2]][,"FAST_avg"], colMeans(MCMC_result_empirical_4$E_gamma_trace[[k]][[2]][,1,,g]))
+data_FASTWORK_and_LUNCH = as.data.frame(rbind(data_FASTWORK_and_LUNCH, cbind(data$X_group[[k]][[2]][,"FAST_avg"], colMeans(MCMC_result_empirical_4$E_gamma_trace[[k]][[2]][,2,,g]))))
+colnames(data_FASTWORK_and_LUNCH) = c("FASTWORK average attendance", "transition coefficient")
+data_FASTWORK_and_LUNCH$phoenix = rep(ifelse(data$X_group[[k]][[2]][,"PHOENIX"] == 1, "San Antonio", "Phoenix"), 2)
+data_FASTWORK_and_LUNCH$transition = rep(c("forward", "backward"), each = 52)
+ggplot(data_FASTWORK_and_LUNCH, aes(x = `FASTWORK average attendance`, y = `transition coefficient`, col = phoenix)) +
+  geom_point(alpha = 0.5) +
+  facet_wrap(~transition) +
+  theme_bw() +
+  ggtitle("Mean transition model coefficients of free or reduced price lunch status \nby FASTWORK average attendance for Conduct attribute")
+```
+
+```{r}
+k = 1
+g = 3
+
+data_P_RE_HISP_and_ELL = cbind(data$X_group[[k]][[2]][,"P_RE_HISP"], colMeans(MCMC_result_empirical_4$E_gamma_trace[[k]][[2]][,1,,g]))
+data_P_RE_HISP_and_ELL = as.data.frame(rbind(data_P_RE_HISP_and_ELL, cbind(data$X_group[[k]][[2]][,"P_RE_HISP"], colMeans(MCMC_result_empirical_4$E_gamma_trace[[k]][[2]][,2,,g]))))
+colnames(data_P_RE_HISP_and_ELL) = c("Hispanic population level", "transition coefficient")
+data_P_RE_HISP_and_ELL$phoenix = rep(ifelse(data$X_group[[k]][[2]][,"PHOENIX"] == 1, "San Antonio", "Phoenix"), 2)
+data_P_RE_HISP_and_ELL$transition = rep(c("forward", "backward"), each = 52)
+ggplot(data_P_RE_HISP_and_ELL, aes(x = phoenix, y = `transition coefficient`, col = phoenix)) +
+  geom_boxplot(aes(group = phoenix)) +
+  geom_point(alpha = 0.5) +
+  facet_wrap(~transition + `Hispanic population level`) +
+  theme_bw() +
+  ggtitle("Mean transition model coefficients of free or reduced price lunch status \nby FASTWORK average attendance for Hyperactivity attribute") +
+  xlab(NULL)
+```
+
+
+```{r}
+k = 1
+g = 4
+
+data_P_RE_HISP_and_ELL = cbind(data$X_group[[k]][[2]][,"P_RE_HISP"], colMeans(MCMC_result_empirical_4$E_gamma_trace[[k]][[2]][,1,,g]))
+data_P_RE_HISP_and_ELL = as.data.frame(rbind(data_P_RE_HISP_and_ELL, cbind(data$X_group[[k]][[2]][,"P_RE_HISP"], colMeans(MCMC_result_empirical_4$E_gamma_trace[[k]][[2]][,2,,g]))))
+colnames(data_P_RE_HISP_and_ELL) = c("Hispanic population level", "transition coefficient")
+data_P_RE_HISP_and_ELL$phoenix = rep(ifelse(data$X_group[[k]][[2]][,"PHOENIX"] == 1, "San Antonio", "Phoenix"), 2)
+data_P_RE_HISP_and_ELL$transition = rep(c("forward", "backward"), each = 52)
+ggplot(data_P_RE_HISP_and_ELL, aes(x = phoenix, y = `transition coefficient`, col = phoenix)) +
+  geom_boxplot(aes(group = phoenix)) +
+  geom_point(alpha = 0.5) +
+  facet_wrap(~transition + `Hispanic population level`) +
+  theme_bw() +
+  ggtitle("Mean transition model coefficients of free or reduced price lunch status \nby FASTWORK average attendance for Hyperactivity attribute")
+```
+
+
+```{r}
+k = 1
+
+data_P_RE_HISP_and_ELL = cbind(as.factor(data$X_group[[k]][[2]][,"P_RE_HISP"]), colMeans(MCMC_result_empirical_4$E_gamma_trace[[k]][[2]][,1,,4]))
+data_P_RE_HISP_and_ELL = rbind(data_P_RE_HISP_and_ELL, cbind(as.factor(data$X_group[[k]][[2]][,"P_RE_HISP"]), colMeans(MCMC_result_empirical_4$E_gamma_trace[[k]][[2]][,2,,4])))
+data_P_RE_HISP_and_ELL = as.data.frame(data_P_RE_HISP_and_ELL)
+colnames(data_P_RE_HISP_and_ELL) = c("Hispanic population level", "transition coefficient")
+data_P_RE_HISP_and_ELL$transition = rep(c("forward", "backward"), each = 52)
+data_P_RE_HISP_and_ELL$phoenix = rep(ifelse(data$X_group[[k]][[2]][,"P_RE_HISP"] == 1, "San Antonio", "Phoenix"), 2)
+
+ggplot(data_P_RE_HISP_and_ELL, aes(x = `Hispanic population level`, y = `transition coefficient`)) +
+  geom_boxplot(aes(group = `Hispanic population level`)) +
+  geom_point() +
+  facet_wrap(~transition) +
+  theme_bw() +
+  ggtitle("Mean transition model coefficients of english language learner status \ngrouped by level of hispanic population for Hyperactivity attribute")
+```
+
+```{r}
+k = 3
+
+data_FASTWORK_and_SPED = cbind(data$X_group[[k]][[2]][,"FASTWORKS_AVG_ATTEND"], colMeans(MCMC_result_empirical_4$E_gamma_trace[[k]][[2]][,1,,5]))
+data_FASTWORK_and_SPED = as.data.frame(rbind(data_FASTWORK_and_SPED, cbind(data$X_group[[k]][[2]][,"FASTWORKS_AVG_ATTEND"], colMeans(MCMC_result_empirical_4$E_gamma_trace[[k]][[2]][,2,,5]))))
+colnames(data_FASTWORK_and_SPED) = c("FASTWORK average attendance", "transition coefficient")
+data_FASTWORK_and_SPED$phoenix = rep(ifelse(data$X_group[[k]][[2]][,"PHOENIX"] == 1, "San Antonio", "Phoenix"), 2)
+data_FASTWORK_and_SPED$transition = rep(c("forward", "backward"), each = 52)
+ggplot(data_FASTWORK_and_SPED, aes(x = `FASTWORK average attendance`, y = `transition coefficient`, col = phoenix)) +
+  geom_point() +
+  facet_wrap(~transition) +
+  theme_bw() +
+  ggtitle("Mean transition model coefficients of special eduation status \nby FASTWORK average attendance for Conduct attribute")
+```
+
+```{r}
+sped_interact = k1_sped + xlab(NULL) + theme(legend.position = "none") + ylim(-2.7, 2.1) +
+  k2_sped + xlab(NULL) + ylab(NULL) + theme(legend.position = "none") + ylim(-2.7, 2.1) +
+  k3_sped + xlab(NULL) + ylab(NULL) + ylim(-2.7, 2.1) +
+  plot_annotation(title = "Mean transition coefficient for special education status") &
+  xlab("FASTWORKS average attendance")
+ggsave("plots/SPED interactions.pdf", plot = sped_interact, width = 12, height = 4)
+```
+
+
+```{r}
+ell_interact = k4_ell + ylim(-1.1, 1) + theme(legend.position = "none") +
+  k5_ell + ylab(NULL) + ylim(-1.1, 1) +
+  plot_annotation("Mean transition coefficient for english language learner status")
+ggsave("plots/ELL interactions.pdf", plot = ell_interact, width = 10, height = 4)
+```
+
+```{r}
+intercepts = (k1_intercept + theme(legend.position = "none") |
+  k2_intercept + theme(legend.position = "none") + ylab(NULL) |
+  k3_intercept + theme(legend.position = "none") + ylab(NULL)) /
+  (k4_intercept + theme(legend.position = "none") |
+  k5_intercept + ylab(NULL) |
+  plot_spacer()) +
+  plot_annotation(title = "Mean transition intercepts")
+ggsave("plots/intercepts.pdf", plot = intercepts, height = 6, width = 10)
+```
+
+```{r}
+intercepts
+```
+
+
+
+
+```{r}
+s4t2_f_SEPD = as.data.frame(MCMC_result_empirical_4$E_gamma_trace[[4]][[2]][,2,,6]) %>%
+  pivot_longer(cols = everything(), names_to = "School", values_to = "Coefficient")
+s4t2_f_SEPD$School = as.factor(substr(s4t2_f_SEPD$School, 2, 4))
+
+ggplot(s4t2_f_SEPD, aes(x = School, y = Coefficient)) +
+  geom_violin(scale = "width", color = "transparent", fill = "seagreen") +
+  theme_bw() +
+  labs(title = "Effect of special education status on acquiring attribute 2") +
+  scale_x_discrete(labels = NULL)
+```
+
+
+```{r}
+k1_parent = plot_interaction(MCMC_result_empirical_4, data, 1, 6, "Hyperactivity")
+k2_parent = plot_interaction(MCMC_result_empirical_4, data, 2, 6, "Emotional")
+k3_parent = plot_interaction(MCMC_result_empirical_4, data, 3, 6, "Conduct")
+k4_parent = plot_interaction(MCMC_result_empirical_4, data, 4, 6, "Peer")
+k5_parent = plot_interaction(MCMC_result_empirical_4, data, 5, 6, "Prosocial")
+
+parent = (k1_parent + theme(legend.position = "none") + ylim(-0.4, 0.5) |
+  k2_parent + theme(legend.position = "none") + ylab(NULL) + ylim(-0.4, 0.5) |
+  k3_parent + theme(legend.position = "none") + ylab(NULL) + ylim(-0.4, 0.5) |
+  k4_parent + theme(legend.position = "none") + ylab(NULL) + ylim(-0.4, 0.5) |
+  k5_parent + ylab(NULL) + ylim(-0.4, 0.5)) + plot_annotation(title = "Mean transition coefficients for parents attending school activities")
+parent
+```
+
+```{r}
+k1_english = plot_interaction(MCMC_result_empirical_4, data, 1, 2, "Hyperactivity")
+k2_english = plot_interaction(MCMC_result_empirical_4, data, 2, 2, "Emotional")
+k3_english = plot_interaction(MCMC_result_empirical_4, data, 3, 2, "Conduct")
+k4_english = plot_interaction(MCMC_result_empirical_4, data, 4, 2, "Peer")
+k5_english = plot_interaction(MCMC_result_empirical_4, data, 5, 2, "Prosocial")
+
+english = (k1_english + theme(legend.position = "none") + ylim(-0.75, 0.5) |
+  k2_english + theme(legend.position = "none") + ylab(NULL) + ylim(-0.75, 0.5) |
+  k3_english + theme(legend.position = "none") + ylab(NULL) + ylim(-0.75, 0.5) |
+  k4_english + theme(legend.position = "none") + ylab(NULL) + ylim(-0.75, 0.5) |
+  k5_english + ylab(NULL) + ylim(-0.75, 0.5)) + plot_annotation(title = "Mean transition coefficients for english speaking frequency")
+english
+```
+
+```{r}
+k1_lunch = plot_interaction(MCMC_result_empirical_4, data, 1, 3, "Hyperactivity")
+k2_lunch = plot_interaction(MCMC_result_empirical_4, data, 2, 3, "Emotional")
+k3_lunch = plot_interaction(MCMC_result_empirical_4, data, 3, 3, "Conduct")
+k4_lunch = plot_interaction(MCMC_result_empirical_4, data, 4, 3, "Peer")
+k5_lunch = plot_interaction(MCMC_result_empirical_4, data, 5, 3, "Prosocial")
+
+lunch = (k1_lunch + theme(legend.position = "none") + ylim(-0.6, 0.6) |
+  k2_lunch + theme(legend.position = "none") + ylab(NULL) + ylim(-0.6, 0.6) |
+  k3_lunch + theme(legend.position = "none") + ylab(NULL) + ylim(-0.6, 0.6) |
+  k4_lunch + theme(legend.position = "none") + ylab(NULL) + ylim(-0.6, 0.6) |
+  k5_lunch + ylab(NULL) + ylim(-0.6, 0.6)) + plot_annotation(title = "Mean transition coefficients for free or reduced price lunch status")
+lunch
+```
+```{r}
+k1_ell = plot_interaction(MCMC_result_empirical_4, data, 1, 4, "Hyperactivity")
+k2_ell = plot_interaction(MCMC_result_empirical_4, data, 2, 4, "Emotional")
+k3_ell = plot_interaction(MCMC_result_empirical_4, data, 3, 4, "Conduct")
+k4_ell = plot_interaction(MCMC_result_empirical_4, data, 4, 4, "Peer")
+k5_ell = plot_interaction(MCMC_result_empirical_4, data, 5, 4, "Prosocial")
+
+ell = (k1_ell + theme(legend.position = "none") + ylim(-1.5, 1) |
+  k2_ell + theme(legend.position = "none") + ylab(NULL) + ylim(-1.5, 1) |
+  k3_ell + theme(legend.position = "none") + ylab(NULL) + ylim(-1.5, 1) |
+  k4_ell + theme(legend.position = "none") + ylab(NULL) + ylim(-1.5, 1) |
+  k5_ell + ylab(NULL) + ylim(-1.5, 1)) + plot_annotation(title = "Mean transition coefficients for english language learner status")
+ell
+```
+```{r}
+k1_sped = plot_interaction(MCMC_result_empirical_4, data, 1, 5, "Hyperactivity")
+k2_sped = plot_interaction(MCMC_result_empirical_4, data, 2, 5, "Emotional")
+k3_sped = plot_interaction(MCMC_result_empirical_4, data, 3, 5, "Conduct")
+k4_sped = plot_interaction(MCMC_result_empirical_4, data, 4, 5, "Peer")
+k5_sped = plot_interaction(MCMC_result_empirical_4, data, 5, 5, "Prosocial")
+
+sped = (k1_sped + theme(legend.position = "none") + ylim(-2.75, 2.1) |
+  k2_sped + theme(legend.position = "none") + ylab(NULL) + ylim(-2.75, 2.1) |
+  k3_sped + theme(legend.position = "none") + ylab(NULL) + ylim(-2.75, 2.1) |
+  k4_sped + theme(legend.position = "none") + ylab(NULL) + ylim(-2.75, 2.1) |
+  k5_sped + ylab(NULL) + ylim(-2.75, 2.1)) + plot_annotation(title = "Mean transition coefficients for special education status")
+sped
+```
+
+```{r}
+intercepts = (k1_intercept + theme(legend.position = "none")  + ylim(-1.7, 4.1) |
+  k2_intercept + theme(legend.position = "none") + ylab(NULL)  + ylim(-1.7, 4.1) |
+  k3_intercept + theme(legend.position = "none") + ylab(NULL)  + ylim(-1.7, 4.1)) /
+  (k4_intercept + theme(legend.position = "none")  + ylim(-1.7, 4.1) |
+  k5_intercept + ylab(NULL)  + ylim(-1.7, 4.1) |
+  plot_spacer()) +
+  plot_annotation(title = "Transition intercepts posterior means")
+ggsave("plots/intercepts.pdf", plot = intercepts, height = 6, width = 10)
+```
+
+```{r}
+intercepts
+```
+
+
+
+
+
+
+
