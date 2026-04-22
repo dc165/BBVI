@@ -6,8 +6,8 @@ date: "2025-04-08"
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-library(dplyr)
 library(torch)
+library(dplyr)
 library(tidyr)
 ```
 
@@ -325,12 +325,12 @@ save(data, file = "TDCM_empirical_data.RData")
 
 
 ```{r}
-setwd("../TCDM_model")
-source("TDCM_Ind.R")
-res = VB_Ind_fit(data, beta_interact = F, max_iter = 200)
+# setwd("../TCDM_model")
+# source("TDCM_Ind.R")
+# res = VB_Ind_fit(data, beta_interact = F, max_iter = 200)
 ```
 ```{r}
-save(res, file = "VB_results.RData")
+# save(res, file = "VB_results.RData")
 ```
 
 
