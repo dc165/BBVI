@@ -30,7 +30,7 @@ school_missing_idx = is.na(Alldata$Y1SCHOOLID)
 Alldata = Alldata[!school_missing_idx,]
 
 # Individual level covariates
-X_ind_idx = c("STUDENTID", "Y1SCHOOLID", "FAST", "Q2A", "Q2B", "Q17A", "Q17B", "A5A", "DOB", "GENDER", "RACE_ETHNICITY", "LUNCH_STATUS", "ELL_STATUS", "SPED_STATUS", "KINDERGARTEN", "ATTENDANCE_RATE", "MATH_PCTZ", "READ_PCTZ")
+X_ind_idx = c("STUDENTID", "Y1SCHOOLID", "FAST", "Q2A", "Q2B", "Q17A", "Q17B", "A5A", "DOB", "GENDER", "RACE_ETHNICITY", "LUNCH_STATUS", "ELL_STATUS", "SPED_STATUS", "KINDERGARTEN", "ATTENDANCE_RATE", "P2", "P3A", "P3B", "P3C", "P4A", "P4B", "P4C", "P6", "P7F")
 
 X_ind = Alldata[,X_ind_idx]
 
@@ -121,6 +121,15 @@ X_ind$FASTWORKS_ATTEND_TOTAL = rowSums(X_ind[,paste0("S", 1:28)] - 1)
 ```
 
 ```{r}
+FAST_avg = X_ind %>% group_by(Y1SCHOOLID) %>% 
+  summarize(FAST_avg = mean(na.omit(FAST_ATTEND_RATE)))
+FAST_avg = FAST_avg[,2]
+X_group = cbind(X_group, FAST_avg)
+```
+
+
+
+```{r}
 # Group level FASTWORKS features
 fw_group = X_ind %>% 
   group_by(Y1SCHOOLID) %>% 
@@ -190,6 +199,28 @@ for(i in 1:5) {
   print(table((rowSums(!is.na(full[,idx_Y1])) > 0) & (rowSums(!is.na(full[,idx_Y3])) > 0)))
   cat("\n")
 }
+```
+
+```{r}
+# PCA
+library(psych)
+pca_res = pca(cor(X_group[,-c(1, 11, 12, 13, 14)]), nfactors = 5)
+pca_res$loadings
+```
+```{r}
+# Community variables
+pca_parent = pca(cor(X_ind[,c("P2", "P3A", "P3B", "P3C", "P4A", "P4B", "P4C", "P6", "P7F")]), nfactors = 5)
+pca_parent$loadings
+```
+```{r}
+# Demographic variables
+pca_dem = pca(cor(X_ind[,c("Q2A", "Q2B", "Q17A", "Q17B", "A5A", "DOB", "GENDER", "RACE_HISP", "LUNCH_STATUS", "ELL_STATUS", "SPED_STATUS")]), nfactors = 7)
+pca_dem$loadings
+```
+```{r}
+# Selected features
+pca_select = pca(cor(X_ind[,c("Q2A", "Q2B", "Q17B", "GENDER", "LUNCH_STATUS", "ELL_STATUS", "SPED_STATUS", "P2", "P3A", "P3C", "P6", "P7F", "FAST_ATTEND_RATE", "FASTWORKS_ATTEND_TOTAL")]), nfactors = 8)
+pca_select$loadings
 ```
 
 
@@ -275,12 +306,7 @@ individual_covariates = X_ind[, c(-1, -2)]
 save(individual_covariates, file = "Individual level covariates with NA rows omitted.RData")
 ```
 
-```{r}
-# PCA
-library(psych)
-pca_res = pca(cor(X_group[,-c(1, 11, 12, 13, 14)]), nfactors = 5)
-pca_res$loadings
-```
+
 
 
 ```{r}
@@ -291,7 +317,7 @@ S = 52 # Schools
 
 # Select fewer individual level covariates
 # X_idx_1 = c("Q17B", "GENDER")
-X_idx_2 = c("Q2A", "Q2B", "Q17B", "GENDER", "FAST_ATTEND_RATE", "FASTWORKS_ATTEND_TOTAL")
+X_idx_2 = c("Q2A", "Q2B", "Q17B", "GENDER", "LUNCH_STATUS", "ELL_STATUS", "SPED_STATUS", "P2", "P3A", "P3C", "P6", "P7F", "FAST_ATTEND_RATE", "FASTWORKS_ATTEND_TOTAL")
 
 # X1 = as.matrix(X_ind[,X_idx_1])
 X1 = rep(1, N)
@@ -299,7 +325,7 @@ X2 = as.matrix(cbind(rep(1, N), X_ind[,X_idx_2]))
 
 
 # Select fewer group level covariates
-U_idx = c("FAST", "FASTWORKS_AVG_ATTEND", "P_RE_HISP")
+U_idx = c("FAST_avg", "FASTWORKS_AVG_ATTEND", "P_RE_HISP", "PHOENIX")
 
 U1 = as.matrix(cbind(rep(1, S), X_group[,U_idx]))
 
@@ -321,6 +347,68 @@ data = data_SCCD
 save(data, file = "TDCM_empirical_data.RData")
 ```
 
+```{r}
+# Maintain 3 level response
+
+# full_answer_idx = rowSums(is.na(full)) == 0
+# full = full[full_answer_idx, ]
+# Y = full
+# 
+# for(i in 1:ncol(Y)) {
+#   Y[,i] = as.numeric(Y[,i])
+#   if(!positive_q_indicator[i]) {
+#     Y[,i] = -Y[,i] + 3
+#   }
+#   Y[,i] = Y[,i] / 2
+# }
+# 
+# # Format responses into tensor 
+# Y = torch_tensor(as.matrix(Y))
+# Y = Y$view(c(nrow(full), 2, 25))
+# 
+# X_ind = X_ind[full_answer_idx, ]
+# group = group[full_answer_idx]
+# 
+# Y = as_array(Y)
+```
+
+```{r}
+# Create data for TDCM fitting algorithms
+N = 987
+K = 5 # skills
+S = 52 # Schools
+
+# Select fewer individual level covariates
+
+X_idx_2 = c("Q17B", "LUNCH_STATUS", "ELL_STATUS", "SPED_STATUS", "P7F")
+
+# X1 = as.matrix(X_ind[,X_idx_1])
+X1 = rep(1, N)
+X2 = as.matrix(cbind(rep(1, N), X_ind[,X_idx_2]))
+
+
+# Select fewer group level covariates
+U_idx = c("FAST_avg", "FASTWORKS_AVG_ATTEND", "P_RE_HISP", "PHOENIX")
+
+U1 = as.matrix(cbind(rep(1, S), X_group[,U_idx]))
+
+X = list()
+U = list()
+for(k in 1:K){
+  X[[k]] = list(X1, X2)
+  U[[k]] = list(U1, U1)
+}
+
+data_SCCD = list()
+data_SCCD$Y = Y
+data_SCCD$X_group = U
+data_SCCD$X_ind = X
+data_SCCD$group = group
+data_SCCD$Q_matrix = Q
+
+data = data_SCCD
+save(data, file = "TDCM_empirical_sig.RData")
+```
 
 
 
