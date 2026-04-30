@@ -358,7 +358,7 @@ sig_omega_gamma = matrix(ncol = 7)
 for(k in 1:K) {
   for(z in 1:2) {
     for(g in 1:6) {
-      sig_ind = apply(MCMC_result_empirical_4$E_omega_trace[[k]][[2]][,z,g,-1], 2, function(x){prod(hdi(x, 0.80))}) >= 0
+      sig_ind = apply(MCMC_result_empirical_4$E_omega_trace[[k]][[2]][,z,g,-1], 2, function(x){prod(hdi(x, 0.8))}) >= 0
       sig_omega_gamma = rbind(sig_omega_gamma, c(k, z, g, sig_ind))
     }
   }
@@ -413,7 +413,7 @@ plot_interaction = function(model, data, attribute, ind_covariate, main) {
   colnames(data_interaction) = c("FASTWORK average attendance", "transition coefficient")
   #data_interaction$location = rep(ifelse(data$X_group[[k]][[2]][,"PHOENIX"] == 1, "San Antonio", "Phoenix"), 2)
   data_interaction$`Hispanic population level` = as.factor(data$X_group[[k]][[2]][,"P_RE_HISP"])
-  data_interaction$transition = rep(c("01", "11"), each = 52)
+  data_interaction$transition = rep(c("0\u21921", "1\u21921"), each = 52)
   ggplot(data_interaction, aes(x = `FASTWORK average attendance`, y = `transition coefficient`, col = `Hispanic population level`)) +
     geom_point(alpha = 0.5) +
     facet_wrap(~transition) +
@@ -610,7 +610,7 @@ intercepts
 
 
 ```{r}
-s4t2_f_SEPD = as.data.frame(MCMC_result_empirical_4$E_gamma_trace[[4]][[2]][,2,,6]) %>%
+s4t2_f_SEPD = as.data.frame(MCMC_result_empirical_4$E_gamma_trace[[4]][[2]][,2,,2]) %>%
   pivot_longer(cols = everything(), names_to = "School", values_to = "Coefficient")
 s4t2_f_SEPD$School = as.factor(substr(s4t2_f_SEPD$School, 2, 4))
 
@@ -631,9 +631,11 @@ k5_parent = plot_interaction(MCMC_result_empirical_4, data, 5, 6, "Prosocial")
 
 parent = (k1_parent + theme(legend.position = "none") + ylim(-0.4, 0.5) |
   k2_parent + theme(legend.position = "none") + ylab(NULL) + ylim(-0.4, 0.5) |
-  k3_parent + theme(legend.position = "none") + ylab(NULL) + ylim(-0.4, 0.5) |
-  k4_parent + theme(legend.position = "none") + ylab(NULL) + ylim(-0.4, 0.5) |
-  k5_parent + ylab(NULL) + ylim(-0.4, 0.5)) + plot_annotation(title = "Mean transition coefficients for parents attending school activities")
+  k3_parent + theme(legend.position = "none") + ylab(NULL) + ylim(-0.4, 0.5)) /
+  (k4_parent + theme(legend.position = "none") + ylim(-0.4, 0.5) |
+  k5_parent + ylab(NULL) + ylim(-0.4, 0.5) |
+  plot_spacer()) + plot_annotation(title = "Mean transition coefficients for parents attending school activities",
+                                   theme = theme(plot.title = element_text(face = "bold")))
 parent
 ```
 
@@ -646,9 +648,11 @@ k5_english = plot_interaction(MCMC_result_empirical_4, data, 5, 2, "Prosocial")
 
 english = (k1_english + theme(legend.position = "none") + ylim(-0.75, 0.5) |
   k2_english + theme(legend.position = "none") + ylab(NULL) + ylim(-0.75, 0.5) |
-  k3_english + theme(legend.position = "none") + ylab(NULL) + ylim(-0.75, 0.5) |
-  k4_english + theme(legend.position = "none") + ylab(NULL) + ylim(-0.75, 0.5) |
-  k5_english + ylab(NULL) + ylim(-0.75, 0.5)) + plot_annotation(title = "Mean transition coefficients for english speaking frequency")
+  k3_english + theme(legend.position = "none") + ylab(NULL) + ylim(-0.75, 0.5)) /
+  (k4_english + theme(legend.position = "none") + ylim(-0.75, 0.5) |
+  k5_english + ylab(NULL) + ylim(-0.75, 0.5) |
+  plot_spacer()) + plot_annotation(title = "Mean transition coefficients for english speaking frequency",
+                                   theme = theme(plot.title = element_text(face = "bold")))
 english
 ```
 
@@ -661,9 +665,11 @@ k5_lunch = plot_interaction(MCMC_result_empirical_4, data, 5, 3, "Prosocial")
 
 lunch = (k1_lunch + theme(legend.position = "none") + ylim(-0.6, 0.6) |
   k2_lunch + theme(legend.position = "none") + ylab(NULL) + ylim(-0.6, 0.6) |
-  k3_lunch + theme(legend.position = "none") + ylab(NULL) + ylim(-0.6, 0.6) |
-  k4_lunch + theme(legend.position = "none") + ylab(NULL) + ylim(-0.6, 0.6) |
-  k5_lunch + ylab(NULL) + ylim(-0.6, 0.6)) + plot_annotation(title = "Mean transition coefficients for free or reduced price lunch status")
+  k3_lunch + theme(legend.position = "none") + ylab(NULL) + ylim(-0.6, 0.6)) /
+  (k4_lunch + theme(legend.position = "none") + ylim(-0.6, 0.6) |
+  k5_lunch + ylab(NULL) + ylim(-0.6, 0.6) |
+  plot_spacer()) + plot_annotation(title = "Mean transition coefficients for free or reduced price lunch status",
+                                   theme = theme(plot.title = element_text(face = "bold")))
 lunch
 ```
 ```{r}
@@ -675,9 +681,11 @@ k5_ell = plot_interaction(MCMC_result_empirical_4, data, 5, 4, "Prosocial")
 
 ell = (k1_ell + theme(legend.position = "none") + ylim(-1.5, 1) |
   k2_ell + theme(legend.position = "none") + ylab(NULL) + ylim(-1.5, 1) |
-  k3_ell + theme(legend.position = "none") + ylab(NULL) + ylim(-1.5, 1) |
-  k4_ell + theme(legend.position = "none") + ylab(NULL) + ylim(-1.5, 1) |
-  k5_ell + ylab(NULL) + ylim(-1.5, 1)) + plot_annotation(title = "Mean transition coefficients for english language learner status")
+  k3_ell + theme(legend.position = "none") + ylab(NULL) + ylim(-1.5, 1)) /
+  (k4_ell + theme(legend.position = "none") + ylim(-1.5, 1) |
+  k5_ell + ylab(NULL) + ylim(-1.5, 1) |
+  plot_spacer()) + plot_annotation(title = "Mean transition coefficients for english language learner status",
+                                   theme = theme(plot.title = element_text(face = "bold")))
 ell
 ```
 ```{r}
@@ -689,9 +697,11 @@ k5_sped = plot_interaction(MCMC_result_empirical_4, data, 5, 5, "Prosocial")
 
 sped = (k1_sped + theme(legend.position = "none") + ylim(-2.75, 2.1) |
   k2_sped + theme(legend.position = "none") + ylab(NULL) + ylim(-2.75, 2.1) |
-  k3_sped + theme(legend.position = "none") + ylab(NULL) + ylim(-2.75, 2.1) |
-  k4_sped + theme(legend.position = "none") + ylab(NULL) + ylim(-2.75, 2.1) |
-  k5_sped + ylab(NULL) + ylim(-2.75, 2.1)) + plot_annotation(title = "Mean transition coefficients for special education status")
+  k3_sped + theme(legend.position = "none") + ylab(NULL) + ylim(-2.75, 2.1)) /
+  (k4_sped + theme(legend.position = "none") + ylim(-2.75, 2.1) |
+  k5_sped + ylab(NULL) + ylim(-2.75, 2.1) |
+  plot_spacer()) + plot_annotation(title = "Mean transition coefficients for special education status",
+                                   theme = theme(plot.title = element_text(face = "bold")))
 sped
 ```
 
@@ -702,12 +712,41 @@ intercepts = (k1_intercept + theme(legend.position = "none")  + ylim(-1.7, 4.1) 
   (k4_intercept + theme(legend.position = "none")  + ylim(-1.7, 4.1) |
   k5_intercept + ylab(NULL)  + ylim(-1.7, 4.1) |
   plot_spacer()) +
-  plot_annotation(title = "Transition intercepts posterior means")
-ggsave("plots/intercepts.pdf", plot = intercepts, height = 6, width = 10)
+  plot_annotation(title = "Mean transition intercepts",
+                  theme = theme(plot.title = element_text(face = "bold")))
+intercepts
 ```
 
 ```{r}
-intercepts
+ggsave("plots/intercepts.pdf", plot = intercepts, height = 6, width = 10)
+ggsave("plots/english.pdf", plot = english, height = 6, width = 10)
+ggsave("plots/lunch.pdf", plot = lunch, height = 6, width = 10)
+ggsave("plots/ell.pdf", plot = ell, height = 6, width = 10)
+ggsave("plots/sped.pdf", plot = sped, height = 6, width = 10)
+ggsave("plots/parent.pdf", plot = parent, height = 6, width = 10)
+```
+
+
+```{r}
+significant_gamma = matrix(nrow = 0, ncol = 7)
+for(k in 1:K) {
+  for(z in 1:2) {
+    for(s in 1:52) {
+      # sig_ind = (abs(colMeans(MCMC_result_empirical_3$E_gamma_trace[[k]][[2]][,z,s,-1])) - 1.28 * apply(MCMC_result_empirical_3$E_gamma_trace[[k]][[2]][,z,s,-1], 2, sd)) > 0
+      sig_ind = apply(MCMC_result_empirical_4$E_gamma_trace[[k]][[2]][,z,s,-1], 2, function(x){prod(hdi(x, 0.8))}) > 0
+      significant_gamma = rbind(significant_gamma, c(k, z, sig_ind))
+    }
+  }
+}
+significant_gamma = as.data.frame(significant_gamma)
+colnames(significant_gamma) = c("attribute", "forward", "Q17B", "LUNCH_STATUS", "ELL_STATUS", "SPED_STATUS", "P7F")
+```
+
+```{r}
+significant_gamma = significant_gamma %>%
+  group_by(attribute, forward) %>%
+  summarise(across(everything(), sum))
+significant_gamma
 ```
 
 
